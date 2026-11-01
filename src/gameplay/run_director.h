@@ -34,7 +34,7 @@ namespace wobo {
 enum class RunPhase { Playing, Drafting, Over };
 
 struct GameEvent {
-    enum class Type { ActionUsed, Teleported, HourEnded, CardChosen, CloseCall, Localized, Spin, BlockCleared, Repainted };
+    enum class Type { ActionUsed, Teleported, HourEnded, CardChosen, CloseCall, Localized, Spin, BlockCleared, Repainted, DayEnded };
     Type type;
     ActionId action = ActionId::Range;
     Pose2D from;
@@ -45,6 +45,7 @@ struct GameEvent {
 struct RunScore {
     double survival_s = 0.0;
     int hour = 1;            // current hour (hours survived = hour - 1)
+    bool survived = false;   // the run ended with the day, Wobo still lost
     int actions_used = 0;
     int kidnaps = 0;
     int close_calls = 0;
@@ -131,6 +132,9 @@ public:
     // shrinking each hour as it "calibrates". 0 means fully calibrated.
     float calibration_noise() const;
     double hour_length_s() const { return hour_length_s_; }
+    // Hours in the day ([run] hours): a run still going at the end of the
+    // last one is the player's win. 0: the day never ends.
+    int day_hours() const { return day_hours_; }
     // Wobo's compute this hour ([compute] in game.cfg): the share of its
     // localizer's full budget, and its updates per second (0: every scan).
     // Both grow towards full as its computer warms up, hour by hour.
@@ -186,6 +190,8 @@ private:
     double hour_length_s_ = 40.0;
     double hour_time_s_ = 0.0;
     int hour_ = 1;
+    int day_hours_ = 0;
+    bool survived_ = false;
     int kidnaps_ = 0;
     int last_close_calls_ = 0;
     int last_spins_ = 0;

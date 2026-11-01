@@ -4,6 +4,8 @@
 // is hidden (the web main loop never returns, so there is no shutdown).
 
 #include <cmath>
+#include <cstdlib>
+#include <string>
 
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
@@ -90,10 +92,31 @@ void frame() {
     g_app.frame();
 }
 
+// The page's ?set=key=value parameters (repeatable), one per line, like the
+// desktop's --set: game.cfg overrides for trying out tuning.
+EM_JS(char*, wobo_web_overrides, (), {
+    var lines = new URLSearchParams(window.location.search).getAll('set').join('\n');
+    return stringToNewUTF8(lines);
+});
+
 }  // namespace
 
 int main() {
-    g_app.init();
+    wobo::LaunchOptions opt;
+    char* sets = wobo_web_overrides();
+    std::string line;
+    for (const char* c = sets;; ++c) {
+        if (*c != '\n' && *c != '\0') {
+            line += *c;
+            continue;
+        }
+        const auto eq = line.find('=');
+        if (eq != std::string::npos) opt.overrides.emplace_back(line.substr(0, eq), line.substr(eq + 1));
+        line.clear();
+        if (*c == '\0') break;
+    }
+    std::free(sets);
+    g_app.init(opt);
     emscripten_set_visibilitychange_callback(nullptr, false, on_visibility_change);
     emscripten_set_main_loop(frame, 0, true);
     return 0;

@@ -89,6 +89,8 @@ bool RunDirector::start(const std::string& map_id, std::uint64_t seed, std::stri
     picked_.clear();
     events_.clear();
     hour_length_s_ = std::max(5.0f, config_.get_float("run.hour_length", 40.0f));
+    day_hours_ = std::max(0, config_.get_int("run.hours", 0));
+    survived_ = false;
     hour_time_s_ = 0.0;
     hour_ = 1;
     apply_compute_budget();
@@ -163,6 +165,13 @@ void RunDirector::step() {
 
     hour_time_s_ += sim_config_.step_s;
     if (hour_time_s_ >= hour_length_s_) {
+        if (day_hours_ > 0 && hour_ >= day_hours_) {
+            hour_time_s_ = hour_length_s_;
+            phase_ = RunPhase::Over;
+            survived_ = true;
+            push({GameEvent::Type::DayEnded, ActionId::Range, {}, {}, "Wobo remains lost today"});
+            return;
+        }
         hour_time_s_ = 0.0;
         push({GameEvent::Type::HourEnded, ActionId::Range, {}, {}, "Hour " + std::to_string(hour_) + " survived"});
         ++hour_;
@@ -419,6 +428,7 @@ RunScore RunDirector::score() const {
     if (!sim_) return s;
     s.survival_s = sim_->time_s();
     s.hour = hour_;
+    s.survived = survived_;
     s.actions_used = actions_.total_uses();
     s.kidnaps = kidnaps_;
     s.close_calls = referee_.close_calls();

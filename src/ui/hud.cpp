@@ -215,9 +215,16 @@ void draw_hud(const HudLayout& l, const RunDirector& run, const HudState& st) {
         text(t.c_str(), tx, l.clock.y + 2.0f * s, 17.0f * s, kEnergy, Weight::Bold);
 
         if (contains(l.hour_panel, st.mouse)) {
-            char tip[48];
+            char tip[64];
             const double left = (1.0 - run.hour_progress()) * run.hour_length_s();
-            std::snprintf(tip, sizeof(tip), "Card draft on the hour, in %.0fs", std::ceil(left));
+            if (run.day_hours() > 0 && score.hour >= run.day_hours()) {
+                std::snprintf(tip, sizeof(tip), "Last hour! Keep Wobo lost %.0fs more", std::ceil(left));
+            } else if (run.day_hours() > 0) {
+                std::snprintf(tip, sizeof(tip), "Card draft on the hour, in %.0fs (of %d hours)", std::ceil(left),
+                              run.day_hours());
+            } else {
+                std::snprintf(tip, sizeof(tip), "Card draft on the hour, in %.0fs", std::ceil(left));
+            }
             const float fs = 14.0f * s;
             const Rectangle tr{l.hour_panel.x, l.bar.y + l.bar.height + 6.0f * s,
                                measure(tip, fs, Weight::Bold) + 24.0f * s, 28.0f * s};

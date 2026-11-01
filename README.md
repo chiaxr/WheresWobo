@@ -19,7 +19,7 @@ You've kidnapped Wobo. Now it's fully-recharged and ready to find out where it i
 | `F` | Centre on Wobo |
 | `H` | Help |
 
-What you see: the solid robot is the real Wobo. The see-through pink Wobo is where it *thinks* it is, pink arrows are its particles, and pink rings are its strongest hypotheses. The white rays are its last scan, and the dashed ring is how far it can currently see. A red tether runs from Wobo to its guess, labelled with how far off it is. When the guess is genuinely right, the red capture ring around Wobo and an outline around the status box fill up as it locks on; once a lock has held for a second the screen edges pulse and a countdown appears. The pink bar is Wobo's own confidence, which can be confidently wrong. The run ends when Wobo's estimate is *actually* right (checked against ground truth) for four seconds straight.
+What you see: the solid robot is the real Wobo. The see-through pink Wobo is where it *thinks* it is, pink arrows are its particles, and pink rings are its strongest hypotheses. The white rays are its last scan, and the dashed ring is how far it can currently see. A red tether runs from Wobo to its guess, labelled with how far off it is. When the guess is genuinely right, the red capture ring around Wobo and an outline around the status box fill up as it locks on; once a lock has held for a second the screen edges pulse and a countdown appears. The pink bar is Wobo's own confidence, which can be confidently wrong. The run ends when Wobo's estimate is *actually* right (checked against ground truth) for four seconds straight. Keep it lost to the end of hour 24 and you win.
 
 Each hour runs once round the clock beside the hour counter (one real minute at 1x, half that at 2x). On the hour you draft a card: new abilities, upgrades, more energy, passives and one-shots. Wobo gets sharper on the hour too, so a run starts easy and gets harder:
 
@@ -28,7 +28,7 @@ Each hour runs once round the clock beside the hour counter (one real minute at 
 
 Your side stays fixed: costs, cooldowns and energy regen only change through the cards you draft.
 
-The results screen shows how long you lasted, e.g. "Lost until Hour 3, 42 min".
+The results screen shows how long you lasted, e.g. "Lost until Hour 3, 42 min", or "You kept it lost all 24 hours".
 
 ### Abilities
 
@@ -59,7 +59,7 @@ Props (tables, sculptures, hay bales, houses) are part of Wobo's map and are tes
 
 ### Difficulty
 
-Measured with `wobo_bench` and the shipped `game.cfg` (16 seeds per map). "Unaided" has no player: runs localized within 300 s and the median time. "Kidnap" is how often, and how quickly, Wobo re-localizes after being teleported halfway through locking on. The three player columns are scripted saboteurs (`--player weak|medium|strong`, 1500 s limit = hour 25): the median hour reached, the middle half of the hours, and how many runs reached the limit.
+Measured with `wobo_bench` and the shipped `game.cfg` (16 seeds per map). "Unaided" has no player: runs localized within 300 s and the median time. "Kidnap" is how often, and how quickly, Wobo re-localizes after being teleported halfway through locking on. The three player columns are scripted saboteurs (`--player weak|medium|strong`): the median hour reached, the middle half of the hours ("end" for the end of the day), and how many runs kept Wobo lost all 24 hours.
 
 - **Weak** drafts at random and, about every other second, presses any ability that is ready, Kidnap included, whatever Wobo is doing.
 - **Medium** keeps every ability it can afford running all the time and saves Kidnap, to a random spot, for the lock-on alarm.
@@ -67,13 +67,13 @@ Measured with `wobo_bench` and the shipped `game.cfg` (16 seeds per map). "Unaid
 
 | Map | For the player | Unaided | Kidnap: recovered, median | Weak | Medium | Strong |
 |---|---|---|---|---|---|---|
-| Barn | Medium | 16/16, 162 s | 16/16, 77 s | hour 8 (4–13; 1/16) | hour 14 (7–25; 7/16) | hour 17 (5–25; 8/16) |
+| Barn | Medium | 16/16, 162 s | 16/16, 77 s | hour 8 (4–13; 1/16) | hour 14 (7–end; 7/16) | hour 17 (5–end; 8/16) |
 | Art Gallery | Medium | 16/16, 164 s | 16/16, 40 s | hour 6 (4–9; 0/16) | hour 6.5 (5–23; 4/16) | hour 8 (6–9; 1/16) |
 | Dining Hall | Medium | 16/16, 144 s | 16/16, 51 s | hour 6 (5–11; 1/16) | hour 8 (5–14; 3/16) | hour 6 (4–10; 2/16) |
 | Königsberg | Hard | 16/16, 174 s | 16/16, 43 s | hour 5 (4–9; 0/16) | hour 6.5 (4–13; 3/16) | hour 7.5 (4–8; 1/16) |
 | Office | Hard | 15/16, 127 s | 11/16, 62 s | hour 4.5 (4–7; 0/16) | hour 4 (4–6; 1/16) | hour 5 (4–7; 0/16) |
 
-Over all five maps the weak, medium and strong players reach a median of hour 6, 7 and 7; 60%, 49% and 66% of their runs end between hours 5 and 15, and 2%, 22% and 15% reach hour 25. Unaided, Wobo spends its slow first hours gathering evidence and finds itself in hour 3, at 127–174 s, on every map.
+Over all five maps the weak, medium and strong players reach a median of hour 6, 7 and 7; 60%, 49% and 66% of their runs end between hours 5 and 15, and 2%, 22% and 15% keep Wobo lost all day. Unaided, Wobo spends its slow first hours gathering evidence and finds itself in hour 3, at 127–174 s, on every map.
 
 - **The Barn** is the player's best map. Its half-turn symmetry gives a Gyro Jam or a Road Block a mirror twin to send Wobo's belief to (see the study below); half the strong player's runs there go the distance.
 - **Art Gallery and Dining Hall** are within noise of each other.
@@ -98,10 +98,10 @@ The scripted player of the time (one that reacted to the lock-on alarm and draft
 No fixed factor makes the late game harder, because the player keeps drafting cards. Costs that grew each hour did it, but the player's side is meant to stay fixed, so the shipped curve makes Wobo's growth carry it:
 
 - **A slow, noisy start**: 20% of its compute at 0.5 Hz and doubled calibration noise, both fading by 20–30% a hour. This keeps early losses rare (0–2% of runs by hour 2).
-- **Compute that keeps growing past 100%**, to 300%. Extra particles stop paying off once there are enough; reading more beams per scan (`localizer.beam_stride`) is what lets a late Wobo see through interference. With the compute capped at 100%, the medium player reached hour 25 in 56% of runs; at 200% in 22%; at 400% in 11%, but then every profile ends by hour 5–6.
+- **Compute that keeps growing past 100%**, to 300%. Extra particles stop paying off once there are enough; reading more beams per scan (`localizer.beam_stride`) is what lets a late Wobo see through interference. With the compute capped at 100%, the medium player outlasted a 1500 s run in 56% of runs; at 200% in 22%; at 400% in 11%, but then every profile ends by hour 5–6.
 - **Cooldowns that start when an effect ends.** Before, three Long Spin cards made Gyro Jam last 19 s on a 4 s cooldown, so it never stopped.
 
-Outcomes are bimodal: a run ends in hours 3–9, or the player's cards and energy outgrow Wobo and it never finds itself. Capping how many effects can run at once, or trimming how far upgrade and energy cards stack, both shrank that tail, but stacking effects is the heart of the game, so neither ships. Check changes with `wobo_bench --player weak|medium|strong --limit 1500`.
+Outcomes are bimodal: a run ends in hours 3–9, or the player's cards and energy outgrow Wobo and it never finds itself. Capping how many effects can run at once, or trimming how far upgrade and energy cards stack, both shrank that tail, but stacking effects is the heart of the game, so neither ships. Instead the day ends: a run still going after hour 24 is the player's win (`run.hours`). Check changes with `wobo_bench --player weak|medium|strong --limit 1500`.
 
 ## Localization and planning
 
@@ -192,6 +192,7 @@ ctest --test-dir build --output-on-failure
 
 # Frame-time profile, screenshots of every map, and the README poster and link-preview card
 ./build/WheresWobo --profile 6
+./build/WheresWobo --set run.hours=1 --set run.hour_length=10   # try tuning (on the web: ?set=run.hours=1)
 ./build/WheresWobo --shots shots --size 1600x900   # <map>.png and a close-up, <map>_close.png
 ./build/WheresWobo --poster docs/poster.png --size 1600x800
 ./build/WheresWobo --poster docs/og-image.png --size 1200x630

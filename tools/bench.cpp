@@ -250,7 +250,7 @@ Result run_one(const Config& cfg, const std::string& map, std::uint64_t seed, do
         }
     }
     r.hours = run.score().hour;
-    if (run.phase() == RunPhase::Over) {
+    if (run.phase() == RunPhase::Over && !run.score().survived) {
         if (kidnapped) r.recovery_s = run.sim().time_s() - kidnap_time;
         else r.time_s = run.sim().time_s();
     }

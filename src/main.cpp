@@ -5,10 +5,12 @@
 //   WheresWobo --poster PATH.png    render the README / social-preview poster, quit
 //   WheresWobo --shots DIR          render every map (whole, and a close-up) to DIR, quit
 //   options: --size WxH             window (or poster) size (default 1280x720)
+//            --set key=value        override game.cfg for this session
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 #include "raylib.h"
 
@@ -27,10 +29,14 @@ int main(int argc, char** argv) {
             opt.shots_dir = argv[++i];
         } else if (std::strcmp(a, "--size") == 0 && has_value) {
             std::sscanf(argv[++i], "%dx%d", &opt.width, &opt.height);
+        } else if (std::strcmp(a, "--set") == 0 && has_value && std::strchr(argv[i + 1], '=')) {
+            const std::string kv = argv[++i];
+            const auto eq = kv.find('=');
+            opt.overrides.emplace_back(kv.substr(0, eq), kv.substr(eq + 1));
         } else {
             std::fprintf(stderr,
                          "usage: WheresWobo [--profile [SECONDS]] [--poster PATH] [--shots DIR]"
-                         " [--size WxH]\n");
+                         " [--size WxH] [--set key=value]...\n");
             return 2;
         }
     }

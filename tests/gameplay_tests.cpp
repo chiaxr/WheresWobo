@@ -460,3 +460,25 @@ TEST("map traits: a barrier needs three floor cells in a row that nothing depend
     CHECK(barrier_fits_somewhere(b, labels, 3));
     CHECK(!stays_connected(b, labels, {b.index(5, 2)}));  // a single cell in the corridor cuts it
 }
+
+TEST("run: the day ends after its last hour, with Wobo still lost") {
+    Config cfg = load_game_config();
+    cfg.set("run.hour_length", "5");
+    cfg.set("run.hours", "3");
+    cfg.set("referee.stability", "100000");  // Wobo can never be declared found
+    RunDirector run(cfg);
+    REQUIRE(run.start("barn", 4));
+    CHECK(run.day_hours() == 3);
+    bool ended = false;
+    for (int i = 0; i < 30 * 30 && run.phase() != RunPhase::Over; ++i) {
+        run.step();
+        for (const GameEvent& e : run.drain_events()) ended = ended || e.type == GameEvent::Type::DayEnded;
+        if (run.phase() == RunPhase::Drafting) run.skip_draft();
+    }
+    REQUIRE(run.phase() == RunPhase::Over);
+    CHECK(ended);
+    const RunScore sc = run.score();
+    CHECK(sc.survived);
+    CHECK(sc.hour == 3);
+    CHECK(std::fabs(sc.survival_s - 15.0) < 0.1);
+}

@@ -39,6 +39,9 @@ struct LaunchOptions {
     // --shots: render every map (the whole board, and a close-up of its
     // focus) to PNGs in this directory at width x height, then quit.
     std::string shots_dir;
+    // --set key=value: override game.cfg for this session (for trying
+    // tuning, e.g. --set run.hours=1).
+    std::vector<std::pair<std::string, std::string>> overrides;
 };
 
 class GameApp {
@@ -66,6 +69,7 @@ private:
     void load_progress();
     std::string best_text(const std::string& map_id) const;
     std::string best_short(const std::string& map_id) const;  // for the title's map cards
+    bool whole_day(double seconds) const;  // a best that lasted to the end of the day
 
     void start_run();
     void go_title();

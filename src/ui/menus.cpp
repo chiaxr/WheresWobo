@@ -163,10 +163,51 @@ void draw_pause(const PauseLayout& l, float s, int w, int h, bool show_beliefs, 
     checkbox(l.beliefs, "Show beliefs", show_beliefs, s, contains(l.beliefs, mouse));
 }
 
+namespace {
+
+// The help panel's text, measured by layout_help to size the panel.
+struct Section {
+    const char* title;
+    const char* body;
+    Color colour;
+};
+const Section kHelpSections[] = {
+    {"The goal",
+     "You've kidnapped Wobo. Now it's fully-recharged and ready to find out where it is. Wobo has scanned "
+     "the current floor plan and is equipped with a colourized 2D LiDAR. Stop it from finding its true "
+     "location: disrupt its perception, confuse its odometry, or even kidnap it again.",
+     kInk},
+    {"Visualization",
+     "The see-through pink Wobo is where it thinks it is. Pink arrows are all its guesses (its particle "
+     "cloud) and pink rings are its strongest hypotheses. "
+     "White lines are its last LiDAR scan, coloured dots are the colours it saw, and the dashed ring is "
+     "how far it can see. Dotted lines show where it is going next. A red tether joins Wobo to its "
+     "guess. When the guess is actually right, the red ring round Wobo and the outline round its status "
+     "box fill up - if they close, the run is over.",
+     kInk},
+    {"Time and actions",
+     "Spend energy to interfere with Wobo's localization. On each hour, draw a card: new abilities, "
+     "upgrades, more energy, or passive tricks. Wobo gets sharper on the hour too: its sensors are "
+     "noisiest in hour 1 and recalibrate, its computer warms up so it thinks faster and weighs more "
+     "guesses.",
+     kInk},
+    {"Controls",
+     "1-6 or click: use an action. Kidnap and Road Block: click a spot, drag to aim. Space: pause. [ ]: speed. "
+     "Drag or right-drag: pan. Wheel or pinch: zoom. B: show beliefs (also in the menu). V: scan lines. Tab: top-down "
+     "view. F: centre on Wobo.",
+     kMuted},
+};
+
+}  // namespace
+
 HelpLayout layout_help(int w, int h, float s) {
     HelpLayout l;
     const float pw = std::min(800.0f * s, w - 30.0f * s);
-    const float ph = std::min(660.0f * s, h - 30.0f * s);
+    // Title, then each section's heading and wrapped body, then the button.
+    float content = 64.0f * s;
+    for (const Section& sec : kHelpSections)
+        content += 34.0f * s + wrap(sec.body, 15.0f * s, pw - 52.0f * s).size() * 15.0f * s * 1.3f;
+    const float ph = std::min(content + 70.0f * s, h - 30.0f * s);
     l.panel = {w * 0.5f - pw * 0.5f, h * 0.5f - ph * 0.5f, pw, ph};
     l.close = {l.panel.x + pw - 130.0f * s, l.panel.y + ph - 60.0f * s, 110.0f * s, 46.0f * s};
     return l;
@@ -181,45 +222,7 @@ void draw_help(const HelpLayout& l, float s, int w, int h, Vector2 mouse) {
     text("How to play", x, y, 30.0f * s, kEnergy, Weight::Bold);
     y += 44.0f * s;
 
-    struct Section {
-        const char* title;
-        const char* body;
-        Color colour;
-    };
-    const Section sections[] = {
-        {"The goal",
-         "Wobo has been switched on somewhere in a map it knows, but not where. It moves around and scans "
-         "to work out its position. You can't steer it - but you can sabotage it. Survive as many hours as "
-         "possible before Wobo correctly finds itself.",
-         kInk},
-        {"Reading the view",
-         "The see-through pink Wobo is where it thinks it is. Pink arrows are all its guesses (its particle "
-         "cloud) and pink rings are its strongest hypotheses. "
-         "White lines are its last LiDAR scan, coloured dots are the colours it saw, and the dashed ring is "
-         "how far it can see. Dotted lines show where it is going next. A red tether joins Wobo to its "
-         "guess. When the guess is actually right, the red ring round Wobo and the outline round its status "
-         "box fill up - if they close, the run is over.",
-         kInk},
-        {"Your actions",
-         "Spend energy (it recharges) on interference. Smoke Bomb: a cloud around Wobo cuts its scanner "
-         "range. Gyro Jam: spin Wobo round so its gyro loses track of which way it faces. From cards: "
-         "Gummy Wheels slows Wobo and makes its wheels overcount; Colour Blind's red-green shades swap "
-         "the colours it sees round and leave it blind straight ahead; Road Block drops a barrier that isn't on its map; Kidnap has a crane drop it "
-         "somewhere else without telling its software. Time them for when Wobo is about to see something telling.",
-         kInk},
-        {"Hours and cards",
-         "The clock runs one hour at a time. On each hour, draft a card: new abilities, "
-         "upgrades, more energy, or passive tricks. Wobo gets sharper on the hour too: its sensors are "
-         "noisiest in hour 1 and recalibrate, its computer warms up so it thinks faster and weighs more "
-         "guesses.",
-         kInk},
-        {"Controls",
-         "1-6 or click: use an action. Kidnap and Road Block: click a spot, drag to aim. Space: pause. [ ]: speed. "
-         "Drag or right-drag: pan. Wheel or pinch: zoom. B: show beliefs (also in the menu). V: scan lines. Tab: top-down "
-         "view. F: centre on Wobo.",
-         kMuted},
-    };
-    for (const Section& sec : sections) {
+    for (const Section& sec : kHelpSections) {
         text(sec.title, x, y, 19.0f * s, kCyan, Weight::Bold);
         y += 24.0f * s;
         y += text_wrapped(sec.body, x, y, 15.0f * s, tw, sec.colour, Weight::Regular, 1.3f);
@@ -247,12 +250,15 @@ void draw_game_over(const GameOverLayout& l, float s, int w, int h, const RunSco
     panel(l.panel, s);
     const float cx = l.panel.x + l.panel.width * 0.5f;
     float y = l.panel.y + 20.0f * s;
-    text_centered("Wobo found itself!", cx, y, 34.0f * s, kEnergy, Weight::Bold);
+    if (score.survived) text_centered("Wobo never found itself.", cx, y, 34.0f * s, kGood, Weight::Bold);
+    else text_centered("Wobo found itself!", cx, y, 34.0f * s, kEnergy, Weight::Bold);
     y += 46.0f * s;
     text_centered(map_name.c_str(), cx, y, 16.0f * s, kMuted, Weight::Bold);
     y += 30.0f * s;
 
-    const std::string line = "Lost until " + survival_text(score.survival_s, hour_length_s);
+    const std::string line =
+        score.survived ? "You kept it lost all " + std::to_string(score.hour) + (score.hour == 1 ? " hour" : " hours")
+                       : "Lost until " + survival_text(score.survival_s, hour_length_s);
     text_centered(line.c_str(), cx, y, 26.0f * s, kInk, Weight::Bold);
     y += 40.0f * s;
 

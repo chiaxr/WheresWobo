@@ -77,6 +77,7 @@ void GameApp::init(const LaunchOptions& options) {
     if (!toon_.valid()) TraceLog(LOG_WARNING, "WOBO: toon shader failed to compile; drawing unlit");
 
     config_ = load_game_config();
+    for (const auto& [key, value] : options.overrides) config_.set(key, value);
     maps_ = list_maps();
     seed_counter_ = static_cast<std::uint64_t>(std::time(nullptr));
     load_progress();
@@ -122,15 +123,22 @@ void GameApp::save_progress() {
     store_save_text(out.str());
 }
 
+bool GameApp::whole_day(double seconds) const {
+    const int hours = config_.get_int("run.hours", 0);
+    return hours > 0 && seconds >= hours * config_.get_float("run.hour_length", 120.0f) - 0.5;
+}
+
 std::string GameApp::best_text(const std::string& map_id) const {
     const auto it = best_.find(map_id);
     if (it == best_.end()) return "No best yet - how long can you last?";
+    if (whole_day(it->second.seconds)) return "Best: kept Wobo lost all day";
     return "Best: lost until " + ui::survival_text(it->second.seconds, config_.get_float("run.hour_length", 120.0f));
 }
 
 std::string GameApp::best_short(const std::string& map_id) const {
     const auto it = best_.find(map_id);
     if (it == best_.end()) return "Not played yet";
+    if (whole_day(it->second.seconds)) return "Best: lost all day";
     return "Best: " + ui::survival_text(it->second.seconds, config_.get_float("run.hour_length", 120.0f));
 }
 
@@ -322,6 +330,10 @@ void GameApp::handle_events(RunDirector& run, bool is_player_run) {
                 break;
             case GameEvent::Type::Spin:
                 fx_.float_text(at, "?!", ui::kEnergy);
+                break;
+            case GameEvent::Type::DayEnded:
+                fx_.float_text(at, "Still lost!", ui::kGood);
+                fx_.poof(at, ui::kGood);
                 break;
         }
     }
@@ -755,7 +767,7 @@ Pose2D GameApp::render_pose(const RunDirector& run, float alpha) const {
 }
 
 Face GameApp::face_for(const RunDirector& run) const {
-    if (run.phase() == RunPhase::Over) return Face::Confident;
+    if (run.phase() == RunPhase::Over) return run.score().survived ? Face::Confused : Face::Confident;
     if (crane_.active() && crane_.frame().carrying) return Face::Surprised;
     if (time_ < dizzy_until_ || run.actions().active(ActionId::Drift)) return Face::Dizzy;
     switch (run.agent().mood()) {
