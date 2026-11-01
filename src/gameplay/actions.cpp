@@ -27,6 +27,10 @@ const ActionInfo kActions[kActionCount] = {
      "A power surge fries Wobo's circuits: for a while it thinks slowly, on a fraction of its compute, and "
      "forgets most of the places it was weighing up.",
      false, false},
+    {ActionId::Magnet, "magnet", "Magnet", "Physical position",
+     "Drop a giant magnet near Wobo: it drags Wobo straight towards it, wheels and all, and its software is not "
+     "told. Anything in the way stops it there.",
+     true, false},
 };
 
 std::string stat_key(ActionId id, const char* field) {
@@ -52,6 +56,7 @@ const char* activate_result_text(ActivateResult r) {
         case ActivateResult::Cooldown: return "Still recharging";
         case ActivateResult::InvalidTarget: return "That spot won't do";
         case ActivateResult::TooClose: return "Too close - pick somewhere farther away";
+        case ActivateResult::TooFar: return "Out of reach - pick somewhere closer";
         case ActivateResult::CutsOff: return "That would cut part of the map off";
         case ActivateResult::Unavailable: return "Not right now";
     }

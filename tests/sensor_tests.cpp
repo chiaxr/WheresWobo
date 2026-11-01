@@ -1,6 +1,7 @@
 #include <cmath>
 
 #include "simulation/lidar.h"
+#include "simulation/world_simulation.h"
 #include "test.h"
 #include "world/map_loader.h"
 
@@ -174,4 +175,32 @@ TEST("lidar: colour quantisation and desaturation") {
     const Rgb g = lidar.measure_colour({255, 0, 0}, rng, grey);
     CHECK(g.r == g.g);
     CHECK(g.g == g.b);
+}
+
+TEST("magnet: drags the robot in a straight line, stops at a wall, and odometry never sees it") {
+    const Map2D map = room();
+    const float r = 0.2f;
+    // Open floor: all the way.
+    const Vec2 open = slide_until_blocked(map, {1.5f, 2.5f}, {4.0f, 2.5f}, r);
+    CHECK_NEAR(open.x, 4.0f, 1e-4);
+    CHECK_NEAR(open.z, 2.5f, 1e-4);
+    // Towards a spot past the blue wall (inner face at x = 4.5): stuck against it.
+    const Vec2 stuck = slide_until_blocked(map, {1.5f, 2.5f}, {6.0f, 2.5f}, r);
+    CHECK_NEAR(stuck.x, 4.5f - r, 0.01);
+    CHECK_NEAR(stuck.z, 2.5f, 1e-4);
+    CHECK(map.circle_free(stuck.x, stuck.z, r));
+
+    // In the simulation: standing still, pulled 0.5 m a step, the wheels report nothing.
+    SimConfig cfg;
+    cfg.dynamics.radius_m = r;
+    WorldSimulation sim(map, cfg, 1, {1.5f, 2.5f, 0.3f});
+    const ExternalPull pull{{6.0f, 2.5f}, 0.5f};
+    const StepResult first = sim.step({}, {}, &pull);
+    CHECK_NEAR(sim.true_pose().x, 2.0f, 1e-4);
+    CHECK_NEAR(sim.true_pose().heading_rad, 0.3f, 1e-6);
+    CHECK_NEAR(first.odometry.forward_m, 0.0f, 1e-6);
+    CHECK_NEAR(first.odometry.lateral_m, 0.0f, 1e-6);
+    CHECK(!first.bumped);
+    for (int i = 0; i < 20; ++i) sim.step({}, {}, &pull);
+    CHECK_NEAR(sim.true_pose().x, 4.5f - r, 0.01);
 }

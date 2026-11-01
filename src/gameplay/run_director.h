@@ -34,7 +34,7 @@ namespace wobo {
 enum class RunPhase { Playing, Drafting, Over };
 
 struct GameEvent {
-    enum class Type { ActionUsed, Teleported, HourEnded, CardChosen, CloseCall, Localized, Spin, BlockCleared, Repainted, DayEnded };
+    enum class Type { ActionUsed, Teleported, HourEnded, CardChosen, CloseCall, Localized, Spin, BlockCleared, Repainted, DayEnded, MagnetCleared };
     Type type;
     ActionId action = ActionId::Range;
     Pose2D from;
@@ -77,8 +77,9 @@ public:
     // Player commands.
     ActivateResult activate(ActionId id, std::optional<Pose2D> target = std::nullopt);
     ActivateResult can_activate(ActionId id) const;
-    // Checks a target without spending anything: a kidnap destination, or
-    // where a Road Block would go (`target.heading_rad` picks its axis).
+    // Checks a target without spending anything: a kidnap destination, where
+    // a Road Block would go (`target.heading_rad` picks its axis), or where a
+    // Magnet would stand (on the floor, within action.magnet.range of Wobo).
     ActivateResult check_target(ActionId id, const Pose2D& target) const;
     // The barrier a Road Block aimed at `target` would be.
     RoadBlock block_at(const Pose2D& target) const;
@@ -100,6 +101,11 @@ public:
     const Map2D& map() const { return *map_; }      // what Wobo knows
     const Map2D& world() const { return *world_; }  // what is physically there
     const std::optional<RoadBlock>& road_block() const { return block_; }
+    // Where the Magnet stands while it pulls.
+    const std::optional<Vec2>& magnet() const { return magnet_; }
+    // Where a Magnet at `target` would leave Wobo if it stood still: as far
+    // as the pull reaches in its duration, or against whatever is in the way.
+    Vec2 magnet_stop(Vec2 target) const;
     const std::vector<Mover>& movers() const { return movers_.movers(); }
     // Whether a card can be offered on this map: Colour Blind needs colourful
     // walls ("colour"), Road Block somewhere it fits ("block"), and Colour
@@ -165,6 +171,7 @@ private:
     std::uint8_t block_material_ = 0;
     std::vector<int> floor_label_;  // 4-connected floor components of the known map, -1 for solid
     std::optional<RoadBlock> block_;
+    std::optional<Vec2> magnet_;
     MoverSystem movers_;
     bool colour_matters_ = true;
     bool block_fits_ = true;

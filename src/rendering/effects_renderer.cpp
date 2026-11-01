@@ -58,6 +58,48 @@ void draw_road_block(const RoadBlock& block, const Map2D& map, float alpha, floa
     rlPopMatrix();
 }
 
+void draw_magnet(Vec2 at, float facing, float alpha, float grow, bool ghost, Color tint) {
+    const Color red{226, 52, 52, 255};
+    const Color steel{206, 210, 222, 255};
+    const Color stand{70, 74, 90, 255};
+    const auto col = [&](Color c) { return prim::with_alpha(ghost ? prim::mix(c, tint, 0.6f) : c, alpha); };
+    const float g = 1.0f - std::pow(1.0f - clampf(grow, 0.0f, 1.0f), 3.0f);
+    rlPushMatrix();
+    rlTranslatef(at.x, 0.0f, at.z);
+    rlRotatef(-facing * kRadToDeg, 0, 1, 0);
+    rlScalef(1.4f, 1.4f * std::max(0.02f, g), 1.4f);
+    // Outline shells first (front faces culled), then the parts.
+    for (int pass = ghost ? 1 : 0; pass < 2; ++pass) {
+        const bool hull = pass == 0;
+        const float o = hull ? 0.018f : 0.0f;
+        const auto c = [&](Color base) { return hull ? prim::with_alpha(Color{30, 28, 40, 255}, alpha) : col(base); };
+        rlDrawRenderBatchActive();
+        rlSetCullFace(hull ? RL_CULL_FACE_FRONT : RL_CULL_FACE_BACK);
+        // A stand under the bend.
+        prim::cylinder({-0.2f, 0.0f, 0.0f}, {-0.2f, 0.04f + o, 0.0f}, 0.14f + o, c(stand), 16);
+        prim::cylinder({-0.2f, 0.0f, 0.0f}, {-0.2f, 0.3f, 0.0f}, 0.035f + o, c(stand), 10);
+        // The horseshoe, lying level: a half-ring at the back, two legs, steel tips.
+        constexpr float y = 0.34f;
+        constexpr float r = 0.16f;
+        constexpr float w = 0.065f;
+        constexpr int kSegments = 8;
+        for (int i = 0; i < kSegments; ++i) {
+            const float a0 = kPi * 0.5f + kPi * i / kSegments;
+            const float a1 = kPi * 0.5f + kPi * (i + 1) / kSegments;
+            prim::cylinder({-0.05f + std::cos(a0) * r, y, std::sin(a0) * r},
+                           {-0.05f + std::cos(a1) * r, y, std::sin(a1) * r}, w + o, c(red), 10);
+            prim::sphere({-0.05f + std::cos(a1) * r, y, std::sin(a1) * r}, w + o, c(red), 5, 8);
+        }
+        for (float side : {-1.0f, 1.0f}) {
+            prim::cylinder({-0.05f, y, side * r}, {0.16f, y, side * r}, w + o, c(red), 10);
+            prim::cylinder({0.16f, y, side * r}, {0.27f + o, y, side * r}, w + o, c(steel), 10);
+        }
+    }
+    rlDrawRenderBatchActive();
+    rlSetCullFace(RL_CULL_FACE_BACK);
+    rlPopMatrix();
+}
+
 void EffectsRenderer::poof(Vec2 at, Color colour) { bursts_.push_back({at, colour, 0.0f, 0.9f}); }
 
 void EffectsRenderer::float_text(Vec2 at, std::string text, Color colour) {

@@ -25,7 +25,9 @@ void intent(const Pose2D& from, const RelativeMotion& remaining, float time_s);
 void candidates(const Pose2D& from, const std::vector<PlanCandidate>& cands);
 // Kidnap targeting preview: a ring and arrow at the chosen destination.
 void target_marker(const Pose2D& target, bool valid, float time_s);
-void min_distance_ring(Vec2 centre, float radius, float time_s);
+void min_distance_ring(Vec2 centre, float radius, float time_s, Color colour = Color{255, 90, 95, 255});
+// Magnet: dashes flowing from Wobo towards the magnet, the way it is dragged.
+void pull_line(Vec2 from, Vec2 to, Color colour, float time_s);
 
 // Lock-on, shown where it happens. The tether runs from the real Wobo to the
 // pose it believes it is at, with dashes flowing towards Wobo as the guess

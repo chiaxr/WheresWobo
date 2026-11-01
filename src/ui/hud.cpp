@@ -22,6 +22,7 @@ Color action_colour(ActionId id) {
         case ActionId::Gummy: return kGummy;
         case ActionId::Block: return kRoadBlock;
         case ActionId::Overload: return kOverload;
+        case ActionId::Magnet: return kMagnet;
         case ActionId::Count: break;
     }
     return kInk;
@@ -460,6 +461,8 @@ void draw_hud(const HudLayout& l, const RunDirector& run, const HudState& st) {
     if (st.targeting) {
         const char* msg = st.target == ActionId::Block
                               ? "Pick a spot for the road block - drag to turn it. Right-click or Esc cancels."
+                          : st.target == ActionId::Magnet
+                              ? "Pick a spot for the magnet, within the ring. Right-click or Esc cancels."
                               : "Pick a spot to drop Wobo - drag to aim it. Right-click or Esc cancels.";
         const float fs = 16.0f * s;
         const float w = measure(msg, fs, Weight::Bold) + 28.0f * s;

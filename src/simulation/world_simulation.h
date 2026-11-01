@@ -26,6 +26,19 @@ struct SimConfig {
     static SimConfig from(const Config& cfg);
 };
 
+// A pull on the robot from outside (the Magnet): it slides straight towards
+// `to` by up to `distance_m` this step, wheels and all, and stops against the
+// first thing in the way. The robot's odometry never sees it.
+struct ExternalPull {
+    Vec2 to;
+    float distance_m = 0.0f;
+};
+
+// Where a disc of `radius` sliding straight from `from` towards `to` stops:
+// at `to`, or against the first thing in the way. `from` itself if it is
+// already stuck.
+Vec2 slide_until_blocked(const Map2D& map, Vec2 from, Vec2 to, float radius);
+
 struct StepResult {
     OdometryDelta odometry;              // this step's noisy motion measurement
     std::optional<RgbLidarScan> scan;    // present on steps where the scanner fires
@@ -36,7 +49,7 @@ class WorldSimulation {
 public:
     WorldSimulation(const Map2D& map, const SimConfig& config, std::uint64_t seed, Pose2D start);
 
-    StepResult step(const MotionCommand& cmd, const SensorModifiers& mods);
+    StepResult step(const MotionCommand& cmd, const SensorModifiers& mods, const ExternalPull* pull = nullptr);
 
     // Kidnap: move the robot's true pose. Nothing is reported to the robot:
     // no odometry, no event. Returns false (and does nothing) if the pose is

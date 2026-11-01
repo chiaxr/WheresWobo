@@ -13,6 +13,11 @@ namespace {
 constexpr Color kRobot{222, 225, 232, 255};
 constexpr Color kScreen{30, 36, 60, 255};
 
+Color prim_alpha(Color c, float a) {
+    c.a = static_cast<unsigned char>(c.a * std::fmax(0.0f, std::fmin(1.0f, a)));
+    return c;
+}
+
 // A filled circle with the cartoon outline.
 void blob(Vector2 c, float r, Color fill, float line) {
     DrawCircleV(c, r + line, kOutline);
@@ -218,6 +223,36 @@ void overload_chip(Vector2 c, float u, float line, float t) {
     spark({c.x - 0.72f * u, c.y - 0.72f * u}, 0.2f * u * flicker, kEnergy);
 }
 
+void horseshoe_magnet(Vector2 c, float u, float line, float t) {
+    // A red horseshoe magnet, opening upwards, with steel tips and lines of
+    // pull flowing in over them.
+    const Color red{226, 52, 52, 255};
+    const Color steel{220, 224, 236, 255};
+    const Vector2 bend{c.x, c.y + 0.12f * u};
+    const float r0 = 0.3f * u, r1 = 0.72f * u;
+    DrawRing(bend, r0 - line, r1 + line, 0.0f, 180.0f, 24, kOutline);
+    for (float side : {-1.0f, 1.0f}) {
+        const float x0 = side < 0 ? bend.x - r1 : bend.x + r0;
+        DrawRectangleRec({x0 - line, c.y - 0.62f * u - line, r1 - r0 + 2 * line, 0.74f * u + 2 * line}, kOutline);
+    }
+    DrawRing(bend, r0, r1, 0.0f, 180.0f, 24, red);
+    for (float side : {-1.0f, 1.0f}) {
+        const float x0 = side < 0 ? bend.x - r1 : bend.x + r0;
+        DrawRectangleRec({x0, c.y - 0.3f * u, r1 - r0, 0.43f * u}, red);
+        DrawRectangleRec({x0, c.y - 0.62f * u, r1 - r0, 0.3f * u}, steel);
+        DrawRectangleRec({x0, c.y - 0.32f * u - line * 0.5f, r1 - r0, line}, kOutline);
+    }
+    DrawCircleV({bend.x - 0.42f * u, bend.y + 0.2f * u}, 0.07f * u, Color{255, 255, 255, 140});
+    // Lines of pull, drifting in towards the tips.
+    const float k = t * 1.2f - std::floor(t * 1.2f);
+    for (int i = 0; i < 3; ++i) {
+        const float a = (200.0f + 70.0f * i) * DEG2RAD;
+        const float d = (0.95f - 0.25f * k) * u;
+        const Vector2 p{c.x + std::cos(a) * d * 0.9f, c.y - 0.62f * u + std::sin(a) * d * 0.45f - 0.15f * u};
+        DrawCircleV(p, 0.07f * u, prim_alpha(kEnergy, 1.0f - k));
+    }
+}
+
 }  // namespace
 
 void action_icon(ActionId id, Vector2 centre, float size, float time_s) {
@@ -231,6 +266,7 @@ void action_icon(ActionId id, Vector2 centre, float size, float time_s) {
         case ActionId::Gummy: gummy_wheel(centre, u, line); break;
         case ActionId::Block: road_block(centre, u, line); break;
         case ActionId::Overload: overload_chip(centre, u, line, time_s); break;
+        case ActionId::Magnet: horseshoe_magnet(centre, u, line, time_s); break;
         case ActionId::Count: break;
     }
 }

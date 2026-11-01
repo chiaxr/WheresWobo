@@ -131,6 +131,53 @@ TEST("actions: each action changes only its own data path") {
     const SensorModifiers overload = run_one(ActionId::Overload);
     CHECK(odom_untouched(overload));
     CHECK(lidar_untouched(overload));
+
+    // Nor does Magnet: it drags Wobo in the physical world (see below).
+    stats.set("action.magnet.owned", 1.0f);
+    const SensorModifiers magnet = run_one(ActionId::Magnet);
+    CHECK(odom_untouched(magnet));
+    CHECK(lidar_untouched(magnet));
+}
+
+TEST("magnet: pulls Wobo towards a spot within reach, and stops when it ends") {
+    Config cfg = load_game_config();
+    cfg.set("action.magnet.owned", "1");
+    cfg.set("energy.start", "100");
+    cfg.set("agent.boot", "100");  // Wobo stays put: only the magnet moves it
+    RunDirector run(cfg);
+    REQUIRE(run.start("barn", 1));
+    const float range = cfg.get_float("action.magnet.range", 5.0f);
+    const Vec2 wobo = run.sim().true_pose().position();
+    CHECK(run.check_target(ActionId::Magnet, {wobo.x + 0.2f, wobo.z, 0.0f}) == ActivateResult::TooClose);
+    CHECK(run.check_target(ActionId::Magnet, {0.1f, 0.1f, 0.0f}) != ActivateResult::Ok);
+
+    // The spot within reach that drags Wobo farthest.
+    std::optional<Pose2D> best;
+    float best_d = 0.0f;
+    for (int i = 0; i < 32; ++i) {
+        const float a = kTwoPi * i / 32.0f;
+        const Pose2D t{wobo.x + std::cos(a) * range * 0.9f, wobo.z + std::sin(a) * range * 0.9f, 0.0f};
+        const Pose2D far{wobo.x + std::cos(a) * range * 1.2f, wobo.z + std::sin(a) * range * 1.2f, 0.0f};
+        if (run.map().point_free(far.x, far.z)) CHECK(run.check_target(ActionId::Magnet, far) == ActivateResult::TooFar);
+        if (run.check_target(ActionId::Magnet, t) != ActivateResult::Ok) continue;
+        const float d = distance(run.magnet_stop(t.position()), wobo);
+        if (d > best_d) {
+            best = t;
+            best_d = d;
+        }
+    }
+    REQUIRE(best.has_value());
+    REQUIRE(best_d > 1.0f);
+    const Vec2 stop = run.magnet_stop(best->position());
+    REQUIRE(run.activate(ActionId::Magnet, *best) == ActivateResult::Ok);
+    REQUIRE(run.magnet().has_value());
+    const float duration = cfg.get_float("action.magnet.duration", 6.0f);
+    for (int i = 0; i < static_cast<int>(duration / run.step_s()) - 1; ++i) run.step();
+    REQUIRE(run.magnet().has_value());
+    CHECK(distance(run.sim().true_pose().position(), stop) < 0.05f);
+    run.step();
+    run.step();
+    CHECK(!run.magnet().has_value());
 }
 
 TEST("overload: caps Wobo's compute while it lasts, then gives it back") {

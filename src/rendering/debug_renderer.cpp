@@ -145,10 +145,28 @@ void target_marker(const Pose2D& target, bool valid, float time_s) {
     rlEnableDepthMask();
 }
 
-void min_distance_ring(Vec2 centre, float radius, float time_s) {
+void min_distance_ring(Vec2 centre, float radius, float time_s, Color colour) {
     rlDisableDepthMask();
-    prim::dashed_ring({centre.x, 0.018f, centre.z}, radius, 0.04f, 30, -time_s * 0.4f,
-                      prim::with_alpha(Color{255, 90, 95, 255}, 0.6f));
+    prim::dashed_ring({centre.x, 0.018f, centre.z}, radius, 0.04f, 30, -time_s * 0.4f, prim::with_alpha(colour, 0.6f));
+    rlDrawRenderBatchActive();
+    rlEnableDepthMask();
+}
+
+void pull_line(Vec2 from, Vec2 to, Color colour, float time_s) {
+    const float dx = to.x - from.x, dz = to.z - from.z;
+    const float len = std::sqrt(dx * dx + dz * dz);
+    if (len < 0.05f) return;
+    const float ux = dx / len, uz = dz / len;
+    rlDisableDepthMask();
+    const float dash = 0.12f;
+    const float phase = std::fmod(time_s * 0.9f, 2.0f * dash);
+    for (float t = phase - 2.0f * dash; t < len; t += 2.0f * dash) {
+        const float a = std::max(t, 0.0f);
+        const float b = std::min(t + dash, len);
+        if (b <= a) continue;
+        strip({from.x + ux * a, 0.03f, from.z + uz * a}, {from.x + ux * b, 0.03f, from.z + uz * b}, 0.09f,
+              prim::with_alpha(colour, 0.85f));
+    }
     rlDrawRenderBatchActive();
     rlEnableDepthMask();
 }

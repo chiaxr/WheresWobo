@@ -54,6 +54,11 @@ private:
 void draw_road_block(const RoadBlock& block, const Map2D& map, float alpha, float grow, bool ghost,
                      Color tint = WHITE);
 
+// Magnet: a red horseshoe magnet with steel tips on a stand, its open end
+// facing `facing` (radians). `grow` 0..1 raises it out of the floor; a ghost
+// is the translucent placement preview, tinted by `tint`.
+void draw_magnet(Vec2 at, float facing, float alpha, float grow, bool ghost, Color tint = WHITE);
+
 class EffectsRenderer {
 public:
     void clear() {

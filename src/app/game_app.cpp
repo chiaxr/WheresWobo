@@ -35,6 +35,7 @@ Color event_colour(ActionId id) {
         case ActionId::Gummy: return ui::kGummy;
         case ActionId::Block: return ui::kRoadBlock;
         case ActionId::Overload: return ui::kOverload;
+        case ActionId::Magnet: return ui::kMagnet;
         default: return ui::kInk;
     }
 }
@@ -297,8 +298,8 @@ void GameApp::handle_events(RunDirector& run, bool is_player_run) {
                 break;
             case GameEvent::Type::ActionUsed:
                 if (e.action == ActionId::Drift) spin_start_ = time_;
-                if (e.action == ActionId::Block) {
-                    fx_.poof(e.to.position(), ui::kRoadBlock);
+                if (e.action == ActionId::Block || e.action == ActionId::Magnet) {
+                    fx_.poof(e.to.position(), event_colour(e.action));
                     fx_.float_text(e.to.position(), e.text, event_colour(e.action));
                 } else if (e.action != ActionId::Kidnap) {
                     fx_.float_text(at, e.text, event_colour(e.action));
@@ -306,6 +307,9 @@ void GameApp::handle_events(RunDirector& run, bool is_player_run) {
                 break;
             case GameEvent::Type::BlockCleared:
                 fx_.poof(e.from.position(), ui::kRoadBlock);
+                break;
+            case GameEvent::Type::MagnetCleared:
+                fx_.poof(e.from.position(), ui::kMagnet);
                 break;
             case GameEvent::Type::Repainted:
                 // A splash where Wobo is, and at the place its walls now pass for.
@@ -452,7 +456,7 @@ void GameApp::handle_gameplay_input(const PointerFrame& in, const ui::HudLayout&
         else menu_open_ = true;
     }
 
-    // Kidnap and Road Block targeting: press on the map to place, drag to aim
+    // Kidnap, Road Block and Magnet targeting: press on the map to place, drag to aim
     // (a Road Block snaps to the grid axes), release to go.
     has_hover_ = false;
     if (targeting_) {
@@ -771,6 +775,7 @@ Face GameApp::face_for(const RunDirector& run) const {
     if (run.phase() == RunPhase::Over) return run.score().survived ? Face::Confused : Face::Confident;
     if (crane_.active() && crane_.frame().carrying) return Face::Surprised;
     if (time_ < dizzy_until_ || run.actions().active(ActionId::Drift)) return Face::Dizzy;
+    if (run.magnet()) return Face::Surprised;
     // Overloaded: its screen glitches between a blank stare and crossed-out eyes.
     if (run.actions().active(ActionId::Overload)) return std::fmod(time_, 0.6f) < 0.15f ? Face::Blind : Face::Thinking;
     switch (run.agent().mood()) {
@@ -848,6 +853,14 @@ void GameApp::draw_world(const RunDirector& run, float alpha, bool overlays) {
             overlay::min_distance_ring(wobo.position(), run.stats().get("action.kidnap.min_distance", 2.0f), time_);
             if (aiming_ || has_hover_) overlay::target_marker(aim_, hover_valid_, time_);
         }
+        if (targeting_ && target_id_ == ActionId::Magnet) {
+            overlay::min_distance_ring(wobo.position(), run.stats().get("action.magnet.range", 5.0f), time_,
+                                       ui::kMagnet);
+            if ((aiming_ || has_hover_) && hover_valid_) {
+                overlay::pull_line(wobo.position(), run.magnet_stop(aim_.position()), ui::kMagnet, time_);
+            }
+        }
+        if (const auto& m = run.magnet()) overlay::pull_line(wobo.position(), *m, ui::kMagnet, time_);
         toon_.set_flat(false);
     }
 
@@ -864,6 +877,12 @@ void GameApp::draw_world(const RunDirector& run, float alpha, bool overlays) {
     if (const auto& block = run.road_block()) {
         const ActionState& st = run.actions().state(ActionId::Block);
         draw_road_block(*block, run.map(), 1.0f, std::min(1.0f, (st.active_total - st.active_left) / 0.3f), false);
+    }
+    if (const auto& m = run.magnet()) {
+        const ActionState& st = run.actions().state(ActionId::Magnet);
+        const Vec2 to_wobo = wobo.position() - *m;
+        draw_magnet(*m, std::atan2(to_wobo.z, to_wobo.x), 1.0f,
+                    std::min(1.0f, (st.active_total - st.active_left) / 0.3f), false);
     }
     fx_.draw_bursts();
     fx_.draw_active(run, wobo, time_);
@@ -885,6 +904,20 @@ void GameApp::draw_world(const RunDirector& run, float alpha, bool overlays) {
     }
     if (overlays && targeting_ && target_id_ == ActionId::Block && (aiming_ || has_hover_)) {
         draw_road_block(run.block_at(aim_), run.map(), 0.5f, 1.0f, true, hover_valid_ ? ui::kGood : ui::kDanger);
+    }
+    if (overlays && targeting_ && target_id_ == ActionId::Magnet && (aiming_ || has_hover_)) {
+        const Color tint = hover_valid_ ? ui::kGood : ui::kDanger;
+        const Vec2 to_wobo = wobo.position() - aim_.position();
+        draw_magnet(aim_.position(), std::atan2(to_wobo.z, to_wobo.x), 0.5f, 1.0f, true, tint);
+        if (hover_valid_) {
+            WoboStyle ghost;
+            ghost.alpha = 0.4f;
+            ghost.tint = ui::kMagnet;
+            ghost.tint_amount = 0.7f;
+            ghost.outline = false;
+            ghost.face = false;
+            wobo_.draw(toon_, run.magnet_stop(aim_.position()), wobo.heading_rad, Face::Surprised, ghost);
+        }
     }
     if (overlays && targeting_ && target_id_ == ActionId::Kidnap && (aiming_ || has_hover_)) {
         WoboStyle ghost;

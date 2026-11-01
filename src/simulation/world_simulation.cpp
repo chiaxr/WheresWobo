@@ -1,6 +1,34 @@
 #include "simulation/world_simulation.h"
 
+#include <algorithm>
+
 namespace wobo {
+
+Vec2 slide_until_blocked(const Map2D& map, Vec2 from, Vec2 to, float radius) {
+    const float len = distance(from, to);
+    if (len < 1e-6f || !map.circle_free(from.x, from.z, radius)) return from;
+    const auto at = [&](float t) { return Vec2{from.x + (to.x - from.x) * t, from.z + (to.z - from.z) * t}; };
+    const auto free = [&](float t) {
+        const Vec2 p = at(t);
+        return map.circle_free(p.x, p.z, radius);
+    };
+    // March in short steps, then narrow down the first one that hits.
+    const float step = std::min(1.0f, 0.04f / len);
+    float good = 0.0f;
+    for (float t = step;; t += step) {
+        t = std::min(t, 1.0f);
+        if (!free(t)) {
+            float bad = t;
+            for (int i = 0; i < 10; ++i) {
+                const float mid = 0.5f * (good + bad);
+                (free(mid) ? good : bad) = mid;
+            }
+            return at(good);
+        }
+        good = t;
+        if (t >= 1.0f) return to;
+    }
+}
 
 SimConfig SimConfig::from(const Config& cfg) {
     SimConfig c;
@@ -25,13 +53,24 @@ WorldSimulation::WorldSimulation(const Map2D& map, const SimConfig& config, std:
       prev_pose_(start),
       last_scan_pose_(start) {}
 
-StepResult WorldSimulation::step(const MotionCommand& cmd, const SensorModifiers& mods) {
+StepResult WorldSimulation::step(const MotionCommand& cmd, const SensorModifiers& mods, const ExternalPull* pull) {
     const float dt = static_cast<float>(config_.step_s);
     prev_pose_ = pose_;
     teleported_ = false;
 
     const DynamicsStep motion = dynamics_.step(*map_, pose_, cmd, dt);
     pose_ = motion.pose;
+    if (pull && pull->distance_m > 0.0f) {
+        const Vec2 here = pose_.position();
+        const float d = distance(here, pull->to);
+        if (d > 1e-4f) {
+            const float k = std::min(1.0f, pull->distance_m / d);
+            const Vec2 goal{here.x + (pull->to.x - here.x) * k, here.z + (pull->to.z - here.z) * k};
+            const Vec2 p = slide_until_blocked(*map_, here, goal, config_.dynamics.radius_m);
+            pose_.x = p.x;
+            pose_.z = p.z;
+        }
+    }
     time_s_ += config_.step_s;
     ++steps_;
 

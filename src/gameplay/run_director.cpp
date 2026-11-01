@@ -39,6 +39,7 @@ bool RunDirector::start(const std::string& map_id, std::uint64_t seed, std::stri
     // material for when one is dropped, and the movers'.
     world_ = std::make_unique<Map2D>(*map_);
     block_ = std::nullopt;
+    magnet_ = std::nullopt;
     block_material_ = world_->add_material(
         Material{"road_block", "Road block", Rgb{255, 128, 32}, true, 0.5f, Pattern::Stripes, ""});
     std::vector<std::uint8_t> mover_materials;
@@ -128,6 +129,10 @@ void RunDirector::step() {
 
     actions_.step(dt);
     if (block_ && !actions_.active(ActionId::Block)) clear_block();
+    if (magnet_ && !actions_.active(ActionId::Magnet)) {
+        push({GameEvent::Type::MagnetCleared, ActionId::Magnet, {magnet_->x, magnet_->z, 0.0f}, {}, ""});
+        magnet_ = std::nullopt;
+    }
     // Overload caps Wobo's compute while it lasts; its software is not told
     // why it has less.
     if (actions_.active(ActionId::Overload) != overloaded_) {
@@ -159,7 +164,13 @@ void RunDirector::step() {
     // Gummy Wheels slows Wobo for real; its software asked for full speed.
     MotionCommand drive = command_;
     drive.linear_mps *= actions_.speed_scale(stats_);
-    const StepResult result = sim_->step(drive, modifiers_);
+    // The Magnet drags Wobo towards it while Wobo is within its reach (a
+    // Kidnap can carry it out); its wheels and gyro never feel it.
+    std::optional<ExternalPull> pull;
+    if (magnet_ && distance(sim_->true_pose().position(), *magnet_) <= stats_.get("action.magnet.range", 5.0f) + 0.5f) {
+        pull = ExternalPull{*magnet_, stats_.get("action.magnet.speed", 0.8f) * dt};
+    }
+    const StepResult result = sim_->step(drive, modifiers_, pull ? &*pull : nullptr);
     AgentInput input;
     input.odometry = result.odometry;
     input.scan = result.scan ? &*result.scan : nullptr;
@@ -273,6 +284,14 @@ std::optional<Vec2> RunDirector::repaint_twin() const {
     return map_->cell_center(repaint_twin_cell_ % map_->width(), repaint_twin_cell_ / map_->width());
 }
 
+Vec2 RunDirector::magnet_stop(Vec2 target) const {
+    const Vec2 from = sim_->true_pose().position();
+    const float reach = stats_.get("action.magnet.speed", 0.8f) * stats_.get("action.magnet.duration", 6.0f);
+    const float d = distance(from, target);
+    const Vec2 goal = d <= reach ? target : Vec2{from.x + (target.x - from.x) * reach / d, from.z + (target.z - from.z) * reach / d};
+    return slide_until_blocked(*world_, from, goal, sim_config_.dynamics.radius_m);
+}
+
 RoadBlock RunDirector::block_at(const Pose2D& target) const {
     RoadBlock b;
     b.along_x = std::fabs(std::cos(target.heading_rad)) >= std::fabs(std::sin(target.heading_rad));
@@ -360,6 +379,13 @@ void RunDirector::clear_block() {
 ActivateResult RunDirector::check_target(ActionId id, const Pose2D& target) const {
     if (!sim_) return ActivateResult::Unavailable;
     if (id == ActionId::Block) return check_block(block_at(target));
+    if (id == ActionId::Magnet) {
+        if (!world_->point_free(target.x, target.z)) return ActivateResult::InvalidTarget;
+        const float d = distance(target.position(), sim_->true_pose().position());
+        if (d < 0.5f) return ActivateResult::TooClose;
+        if (d > stats_.get("action.magnet.range", 5.0f)) return ActivateResult::TooFar;
+        return ActivateResult::Ok;
+    }
     if (!world_->valid_pose(target, sim_config_.dynamics.radius_m)) return ActivateResult::InvalidTarget;
     const float min_d = stats_.get("action.kidnap.min_distance", 2.0f);
     if (distance(target.position(), sim_->true_pose().position()) < min_d) return ActivateResult::TooClose;
@@ -389,6 +415,9 @@ ActivateResult RunDirector::activate(ActionId id, std::optional<Pose2D> target) 
     } else if (id == ActionId::Block) {
         place_block(block_at(*target));
         e.to = {block_->centre.x, block_->centre.z, 0.0f};
+    } else if (id == ActionId::Magnet) {
+        magnet_ = target->position();
+        e.to = {magnet_->x, magnet_->z, 0.0f};
     } else if (id == ActionId::Colour) {
         repaint_.clear();
         repaint_twin_cell_ = -1;

@@ -7,8 +7,8 @@
 // with the Repainting Works upgrade, sometimes the colours of a look-alike
 // place instead -- see RunDirector), the world itself (Road Block:
 // an obstacle that is not on Wobo's map), its onboard computer (Overload:
-// a cap on the compute budget, applied by RunDirector) or -- Kidnap --
-// the robot's true physical pose. Parameters come from RunStats, so cards
+// a cap on the compute budget, applied by RunDirector) or the robot's true
+// physical pose (Kidnap, all at once; Magnet, a drag across the floor). Parameters come from RunStats, so cards
 // can change them mid-run. Internal keys ("range", "drift", ...) name the
 // data path, and stay stable while display names change.
 
@@ -24,7 +24,7 @@
 
 namespace wobo {
 
-enum class ActionId : int { Range, Drift, Kidnap, Colour, Gummy, Block, Overload, Count };
+enum class ActionId : int { Range, Drift, Kidnap, Colour, Gummy, Block, Overload, Magnet, Count };
 inline constexpr int kActionCount = static_cast<int>(ActionId::Count);
 
 struct ActionInfo {
@@ -40,7 +40,7 @@ struct ActionInfo {
 const ActionInfo& action_info(ActionId id);
 std::optional<ActionId> action_from_key(const std::string& key);
 
-enum class ActivateResult { Ok, NotOwned, NoEnergy, Cooldown, InvalidTarget, TooClose, CutsOff, Unavailable };
+enum class ActivateResult { Ok, NotOwned, NoEnergy, Cooldown, InvalidTarget, TooClose, TooFar, CutsOff, Unavailable };
 const char* activate_result_text(ActivateResult r);
 
 struct ActionState {

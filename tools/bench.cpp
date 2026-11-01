@@ -20,7 +20,7 @@
 // "Spam": the action is used whenever it is off cooldown from the start;
 // how many runs Wobo still localizes in, and how long it takes.
 // --only limits it to some actions, by key (none, range, drift, kidnap,
-// colour, gummy, block, overload, ...).
+// colour, gummy, block, overload, magnet, ...).
 
 #include <algorithm>
 #include <chrono>
@@ -97,6 +97,45 @@ bool kidnap_anywhere(RunDirector& run, Rng& rng) {
     return false;
 }
 
+// A Magnet where it drags Wobo farthest before anything stops it.
+std::optional<Pose2D> magnet_spot(const RunDirector& run) {
+    const Pose2D p = run.sim().true_pose();
+    const float range = run.stats().get("action.magnet.range", 5.0f);
+    std::optional<Pose2D> best;
+    float best_d = 0.5f;
+    for (int i = 0; i < 32; ++i) {
+        const float a = kTwoPi * i / 32.0f;
+        for (float k : {0.95f, 0.75f, 0.5f}) {
+            const Pose2D t{p.x + std::cos(a) * range * k, p.z + std::sin(a) * range * k, 0.0f};
+            if (run.check_target(ActionId::Magnet, t) != ActivateResult::Ok) continue;
+            const float d = distance(run.magnet_stop(t.position()), p.position());
+            if (d > best_d) {
+                best = t;
+                best_d = d;
+            }
+        }
+    }
+    return best;
+}
+
+bool magnet_far(RunDirector& run) {
+    if (run.can_activate(ActionId::Magnet) != ActivateResult::Ok) return false;
+    const auto spot = magnet_spot(run);
+    return spot && run.activate(ActionId::Magnet, *spot) == ActivateResult::Ok;
+}
+
+bool magnet_anywhere(RunDirector& run, Rng& rng) {
+    const Pose2D p = run.sim().true_pose();
+    const float range = run.stats().get("action.magnet.range", 5.0f);
+    for (int i = 0; i < 50; ++i) {
+        const float a = rng.uniform() * kTwoPi;
+        const float d = range * std::sqrt(rng.uniform());
+        const Pose2D t{p.x + std::cos(a) * d, p.z + std::sin(a) * d, 0.0f};
+        if (run.activate(ActionId::Magnet, t) == ActivateResult::Ok) return true;
+    }
+    return false;
+}
+
 bool block_ahead(RunDirector& run) {
     if (run.can_activate(ActionId::Block) != ActivateResult::Ok) return false;
     const auto spot = block_spot(run);
@@ -105,7 +144,8 @@ bool block_ahead(RunDirector& run) {
 
 // An ordinary player, who keeps something running all the time: any action
 // that is ready and affordable, in a fixed order (Gyro Jam, Smoke Bomb,
-// Gummy Wheels, Colour Blind, Overload, a Road Block across Wobo's way), whether or not
+// Gummy Wheels, Colour Blind, Overload, a Road Block across Wobo's way, a
+// Magnet that drags Wobo as far as it can), whether or not
 // Wobo is anywhere near the truth. Saves Kidnap, to a random spot, for the
 // lock-on alarm (a lock held for a second). Drafts the first card offered.
 void medium_step(RunDirector& run, Rng& rng) {
@@ -117,7 +157,8 @@ void medium_step(RunDirector& run, Rng& rng) {
     for (ActionId id : {ActionId::Drift, ActionId::Range, ActionId::Gummy, ActionId::Colour, ActionId::Overload}) {
         if (!run.actions().active(id) && run.activate(id) == ActivateResult::Ok) return;
     }
-    block_ahead(run);
+    if (block_ahead(run)) return;
+    magnet_far(run);
 }
 
 // A beginner: drafts at random and, about every other second, presses any
@@ -140,20 +181,21 @@ void weak_step(RunDirector& run, Rng& rng, double& next_look_s) {
     const ActionId id = usable[rng.below(static_cast<std::uint32_t>(usable.size()))];
     if (id == ActionId::Kidnap) kidnap_anywhere(run, rng);
     else if (id == ActionId::Block) block_ahead(run);
+    else if (id == ActionId::Magnet) magnet_anywhere(run, rng);
     else run.activate(id);
 }
 
 // An expert: plays like the ordinary player (holding energy back measured
 // worse than spending it), but drafts by a fixed priority (Kidnap and what
-// feeds it, then Gyro Jam, Overload, energy, and the rest, as --study ranks
-// them), favours the stronger effects, Kidnaps to the spot farthest from
-// where Wobo thinks it is, and saves Overload for a lock-on alarm that Kidnap
-// can't answer.
+// feeds it, Magnet, then Gyro Jam, Overload, energy, and the rest, as
+// --study ranks them), favours the stronger effects, Kidnaps to the spot
+// farthest from where Wobo thinks it is, and saves Magnet, then Overload, for
+// a lock-on alarm that Kidnap can't answer.
 void strong_step(RunDirector& run, Rng& rng) {
     static const char* const kPriority[] = {
         "kidnap", "spare_kidnap", "kidnap_cool", "kidnap_cheap", "drift_long", "aftershock", "overload",
-        "overload_cool", "overload_long", "battery",
-        "capacitor", "solar", "overclock", "vertigo", "drift_strong", "gummy", "gummy_sticky", "block",
+        "overload_cool", "overload_long", "battery", "capacitor", "solar", "magnet", "magnet_long",
+        "magnet_strong", "overclock", "vertigo", "drift_strong", "gummy", "gummy_sticky", "block",
         "block_long", "brinkmanship", "chain_reaction", "power_surge", "cold_snap", "colour", "repaint",
         "colour_long", "range_cheap", "range_long", "range_deep", "static_cling"};
     if (run.phase() == RunPhase::Drafting) {
@@ -184,7 +226,7 @@ void strong_step(RunDirector& run, Rng& rng) {
         }
         if (far && run.activate(ActionId::Kidnap, *far) == ActivateResult::Ok) return;
     }
-    if (lock_alarm(run) && run.activate(ActionId::Overload) == ActivateResult::Ok) return;
+    if (lock_alarm(run) && (run.activate(ActionId::Overload) == ActivateResult::Ok || magnet_far(run))) return;
     for (ActionId id : {ActionId::Drift, ActionId::Gummy, ActionId::Colour, ActionId::Range}) {
         if (!run.actions().active(id) && run.activate(id) == ActivateResult::Ok) return;
     }
@@ -285,6 +327,10 @@ bool use_action(RunDirector& run, ActionId id, Rng& rng) {
         const auto spot = block_spot(run);
         return spot && run.activate(id, *spot) == ActivateResult::Ok;
     }
+    if (id == ActionId::Magnet) {
+        const auto spot = magnet_spot(run);
+        return spot && run.activate(id, *spot) == ActivateResult::Ok;
+    }
     return run.activate(id) == ActivateResult::Ok;
 }
 
@@ -360,7 +406,8 @@ void run_study(const Config& base, const std::vector<std::string>& maps, int fir
                const std::string& only) {
     const Config cfg = study_config(base);
     const ActionId ids[] = {kNoAction, ActionId::Range, ActionId::Drift, ActionId::Gummy,
-                            ActionId::Colour, ActionId::Block, ActionId::Overload, ActionId::Kidnap};
+                            ActionId::Colour, ActionId::Block, ActionId::Overload, ActionId::Magnet,
+                            ActionId::Kidnap};
     std::printf("%-12s %-13s | %6s %7s %8s %9s | %7s %8s\n", "map", "action", "used", "broke", "refind", "peak err",
                 "spam ok", "median");
     for (const std::string& map : maps) {
