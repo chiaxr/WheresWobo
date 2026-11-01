@@ -19,6 +19,8 @@ Color action_colour(ActionId id) {
         case ActionId::Drift: return Color{255, 150, 50, 255};
         case ActionId::Kidnap: return kDanger;
         case ActionId::Colour: return kBelief;
+        case ActionId::Gummy: return kGummy;
+        case ActionId::Block: return kRoadBlock;
         case ActionId::Count: break;
     }
     return kInk;
@@ -328,7 +330,7 @@ void draw_hud(const HudLayout& l, const RunDirector& run, const HudState& st) {
         const float cost = run.action_cost(id);
         const bool hover = contains(rect, st.mouse);
         const bool active = state.active_left > 0.0f;
-        const bool targeting = st.targeting && id == ActionId::Kidnap;
+        const bool targeting = st.targeting && id == st.target;
         if (hover) {
             hovered = &info;
             hovered_rect = rect;
@@ -441,7 +443,9 @@ void draw_hud(const HudLayout& l, const RunDirector& run, const HudState& st) {
     const float cx = l.bar.x + l.bar.width * 0.5f;
     const float ty = l.bar.y + l.bar.height + 12.0f * s;
     if (st.targeting) {
-        const char* msg = "Pick a spot to drop Wobo - drag to aim it. Right-click or Esc cancels.";
+        const char* msg = st.target == ActionId::Block
+                              ? "Pick a spot for the road block - drag to turn it. Right-click or Esc cancels."
+                              : "Pick a spot to drop Wobo - drag to aim it. Right-click or Esc cancels.";
         const float fs = 16.0f * s;
         const float w = measure(msg, fs, Weight::Bold) + 28.0f * s;
         panel({cx - w * 0.5f, ty, w, 34.0f * s}, s, Color{120, 30, 40, 235}, kDanger);

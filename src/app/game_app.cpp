@@ -31,6 +31,8 @@ Color event_colour(ActionId id) {
         case ActionId::Range: return ui::kCyan;
         case ActionId::Drift: return Color{255, 150, 50, 255};
         case ActionId::Kidnap: return ui::kDanger;
+        case ActionId::Gummy: return ui::kGummy;
+        case ActionId::Block: return ui::kRoadBlock;
         default: return ui::kInk;
     }
 }
@@ -280,7 +282,15 @@ void GameApp::handle_events(RunDirector& run, bool is_player_run) {
                 break;
             case GameEvent::Type::ActionUsed:
                 if (e.action == ActionId::Drift) spin_start_ = time_;
-                if (e.action != ActionId::Kidnap) fx_.float_text(at, e.text, event_colour(e.action));
+                if (e.action == ActionId::Block) {
+                    fx_.poof(e.to.position(), ui::kRoadBlock);
+                    fx_.float_text(e.to.position(), e.text, event_colour(e.action));
+                } else if (e.action != ActionId::Kidnap) {
+                    fx_.float_text(at, e.text, event_colour(e.action));
+                }
+                break;
+            case GameEvent::Type::BlockCleared:
+                fx_.poof(e.from.position(), ui::kRoadBlock);
                 break;
             case GameEvent::Type::HourEnded:
                 if (is_player_run) toast(e.text + " - pick a card!", ui::kGood);
@@ -366,6 +376,7 @@ void GameApp::use_action(ActionId id) {
             return;
         }
         targeting_ = true;
+        target_id_ = id;
         aiming_ = false;
         return;
     }
@@ -416,7 +427,8 @@ void GameApp::handle_gameplay_input(const PointerFrame& in, const ui::HudLayout&
         else menu_open_ = true;
     }
 
-    // Kidnap targeting: press on the map to place, drag to aim, release to go.
+    // Kidnap and Road Block targeting: press on the map to place, drag to aim
+    // (a Road Block snaps to the grid axes), release to go.
     has_hover_ = false;
     if (targeting_) {
         if (in.cancel) {
@@ -430,7 +442,7 @@ void GameApp::handle_gameplay_input(const PointerFrame& in, const ui::HudLayout&
                 if (dx * dx + dz * dz > 0.04f) aim_.heading_rad = std::atan2(dz, dx);
             }
             if (in.released) {
-                const ActivateResult r = run_->activate(ActionId::Kidnap, aim_);
+                const ActivateResult r = run_->activate(target_id_, aim_);
                 if (r != ActivateResult::Ok) toast(activate_result_text(r), ui::kDanger);
                 targeting_ = aiming_ = false;
             }
@@ -438,18 +450,19 @@ void GameApp::handle_gameplay_input(const PointerFrame& in, const ui::HudLayout&
             aim_.x = g.x;
             aim_.z = g.z;
             has_hover_ = true;
+            if (target_id_ == ActionId::Block) aim_.heading_rad = run_->block_heading_at(aim_.position());
             if (in.pressed) {
                 aiming_ = true;
-                aim_.heading_rad = run_->sim().true_pose().heading_rad;
+                if (target_id_ == ActionId::Kidnap) aim_.heading_rad = run_->sim().true_pose().heading_rad;
                 if (in.released) {
-                    const ActivateResult r = run_->activate(ActionId::Kidnap, aim_);
+                    const ActivateResult r = run_->activate(target_id_, aim_);
                     if (r != ActivateResult::Ok) toast(activate_result_text(r), ui::kDanger);
                     targeting_ = aiming_ = false;
                     return;
                 }
             }
         }
-        hover_valid_ = run_->check_target(aim_) == ActivateResult::Ok;
+        hover_valid_ = run_->check_target(target_id_, aim_) == ActivateResult::Ok;
         return;
     }
 
@@ -714,8 +727,8 @@ void GameApp::draw_world(const RunDirector& run, float alpha, bool overlays) {
     Pose2D wobo = render_pose(run, alpha);
     const RobotAgent& agent = run.agent();
 
-    // How Wobo looks right now: carried by the crane, spun by Spin It,
-    // wearing Colour Blind's shades.
+    // How Wobo looks right now: carried by the crane, spun by Gyro Jam,
+    // wearing Colour Blind's shades, gum on its wheels.
     WoboStyle look;
     const bool craning = crane_.active() && &run == run_.get();
     if (craning) {
@@ -728,6 +741,7 @@ void GameApp::draw_world(const RunDirector& run, float alpha, bool overlays) {
     const float spin_k = clampf((time_ - spin_start_) / 1.4f, 0.0f, 1.0f);
     const float spin = 3.0f * kTwoPi * (1.0f - std::pow(1.0f - spin_k, 3.0f));
     look.sunglasses = run.actions().active(ActionId::Colour);
+    look.gummy = run.actions().active(ActionId::Gummy);
     look.dizzy_stars = run.actions().active(ActionId::Drift) || time_ < dizzy_until_;
 
     BeginMode3D(camera_.camera());
@@ -767,7 +781,7 @@ void GameApp::draw_world(const RunDirector& run, float alpha, bool overlays) {
             ring_pos_ = wobo.position();
         }
         if (show_debug_) overlay::candidates(wobo, agent.planner().last_candidates());
-        if (targeting_) {
+        if (targeting_ && target_id_ == ActionId::Kidnap) {
             overlay::min_distance_ring(wobo.position(), run.stats().get("action.kidnap.min_distance", 2.0f), time_);
             if (aiming_ || has_hover_) overlay::target_marker(aim_, hover_valid_, time_);
         }
@@ -777,6 +791,10 @@ void GameApp::draw_world(const RunDirector& run, float alpha, bool overlays) {
     wobo_.draw_xray(toon_, wobo.position(), wobo.heading_rad + spin, Color{255, 255, 255, 90}, look.lift);
     wobo_.draw(toon_, wobo.position(), wobo.heading_rad + spin, face_for(run), look);
     if (craning) crane_.draw();
+    if (const auto& block = run.road_block()) {
+        const ActionState& st = run.actions().state(ActionId::Block);
+        draw_road_block(*block, run.map(), 1.0f, std::min(1.0f, (st.active_total - st.active_left) / 0.3f), false);
+    }
     fx_.draw_bursts();
     fx_.draw_active(run, wobo, time_);
 
@@ -795,7 +813,10 @@ void GameApp::draw_world(const RunDirector& run, float alpha, bool overlays) {
             wobo_.draw(toon_, est.pose.position(), est.pose.heading_rad, Face::Curious, ghost);
         }
     }
-    if (overlays && targeting_ && (aiming_ || has_hover_)) {
+    if (overlays && targeting_ && target_id_ == ActionId::Block && (aiming_ || has_hover_)) {
+        draw_road_block(run.block_at(aim_), run.map(), 0.5f, 1.0f, true, hover_valid_ ? ui::kGood : ui::kDanger);
+    }
+    if (overlays && targeting_ && target_id_ == ActionId::Kidnap && (aiming_ || has_hover_)) {
         WoboStyle ghost;
         ghost.alpha = 0.45f;
         ghost.tint = hover_valid_ ? ui::kGood : ui::kDanger;
@@ -946,6 +967,7 @@ void GameApp::draw() {
                 st.paused = sim_paused_ || external_pause_;
                 st.speed_index = speed_index_;
                 st.targeting = targeting_;
+                st.target = target_id_;
                 st.mouse = mouse;
                 st.toast = toast_;
                 st.toast_alpha = std::min(1.0f, toast_t_ / 0.4f);

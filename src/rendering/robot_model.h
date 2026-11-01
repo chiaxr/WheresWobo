@@ -22,8 +22,9 @@ struct WoboStyle {
     bool outline = true;
     bool face = true;
     float lift = 0.0f;        // height off the ground (carried by the crane)
-    bool sunglasses = false;  // Colour Blind: odd-coloured shades
-    bool dizzy_stars = false; // Spin It: stars circling its head
+    bool sunglasses = false;  // Colour Blind: red-green shades
+    bool gummy = false;       // Gummy Wheels: bubblegum stuck round the wheels
+    bool dizzy_stars = false; // Gyro Jam: stars circling its head
     bool blindfold = false;   // kidnapped: a cloth over its eyes, knotted at the back
     bool tied_up = false;     // kidnapped: rope round its body and arms
 };

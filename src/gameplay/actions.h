@@ -1,9 +1,11 @@
 #pragma once
 
 // Player interventions. Each action attacks one part of Wobo's estimation
-// pipeline and nothing else: the LiDAR's reach (Smoke Bomb), the wheel
-// odometry (Spin It), the LiDAR's colour channel (Colour Blind), or -- Kidnap
-// -- the robot's true physical pose. Parameters come from RunStats, so cards
+// pipeline and nothing else: the LiDAR's reach (Smoke Bomb), the gyro's
+// heading (Gyro Jam), the wheels' distance count (Gummy Wheels, which also
+// slows Wobo down), the LiDAR's colour channel (Colour Blind), the world
+// itself (Road Block: an obstacle that is not on Wobo's map) or -- Kidnap --
+// the robot's true physical pose. Parameters come from RunStats, so cards
 // can change them mid-run. Internal keys ("range", "drift", ...) name the
 // data path, and stay stable while display names change.
 
@@ -19,7 +21,7 @@
 
 namespace wobo {
 
-enum class ActionId : int { Range, Drift, Kidnap, Colour, Count };
+enum class ActionId : int { Range, Drift, Kidnap, Colour, Gummy, Block, Count };
 inline constexpr int kActionCount = static_cast<int>(ActionId::Count);
 
 struct ActionInfo {
@@ -28,14 +30,14 @@ struct ActionInfo {
     const char* name;         // display name
     const char* stream;       // which data path it attacks, for the HUD
     const char* description;
-    bool targeted;            // needs a destination picked on the map
+    bool targeted;            // needs a spot picked on the map
     bool instant;             // no duration
 };
 
 const ActionInfo& action_info(ActionId id);
 std::optional<ActionId> action_from_key(const std::string& key);
 
-enum class ActivateResult { Ok, NotOwned, NoEnergy, Cooldown, InvalidTarget, TooClose, Unavailable };
+enum class ActivateResult { Ok, NotOwned, NoEnergy, Cooldown, InvalidTarget, TooClose, CutsOff, Unavailable };
 const char* activate_result_text(ActivateResult r);
 
 struct ActionState {
@@ -55,9 +57,8 @@ public:
     // Wobo is to finding itself (used by Brinkmanship).
     float cost(ActionId id, const RunStats& stats, float danger) const;
 
-    // Checks everything except a kidnap destination (the run director
-    // validates that against the map), and on success spends energy and
-    // starts the effect.
+    // Checks everything except a target on the map (the run director
+    // validates that), and on success spends energy and starts the effect.
     ActivateResult activate(ActionId id, RunStats& stats, EnergySystem& energy, float danger);
     ActivateResult check(ActionId id, const RunStats& stats, const EnergySystem& energy,
                          float danger) const;
@@ -70,6 +71,8 @@ public:
 
     // The measurement-path changes all active effects add up to.
     SensorModifiers modifiers(const RunStats& stats) const;
+    // Gummy Wheels' physical slow-down: a multiplier on Wobo's forward speed.
+    float speed_scale(const RunStats& stats) const;
 
     const ActionState& state(ActionId id) const { return states_[static_cast<int>(id)]; }
     bool active(ActionId id) const { return state(id).active_left > 0.0f; }

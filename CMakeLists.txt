@@ -126,6 +126,7 @@ add_library(wobo_core STATIC
     src/gameplay/actions.cpp
     src/gameplay/cards.cpp
     src/gameplay/energy.cpp
+    src/gameplay/map_traits.cpp
     src/gameplay/referee.cpp
     src/gameplay/run_director.cpp
     src/gameplay/run_stats.cpp

@@ -9,6 +9,55 @@
 
 namespace wobo {
 
+void draw_road_block(const RoadBlock& block, const Map2D& map, float alpha, float grow, bool ghost, Color tint) {
+    if (block.cells.empty()) return;
+    const Color orange{255, 128, 32, 255};
+    const Color white{240, 240, 236, 255};
+    const auto col = [&](Color c) {
+        Color out = ghost ? prim::mix(c, tint, 0.6f) : c;
+        return prim::with_alpha(out, alpha);
+    };
+    const float cs = map.cell_size();
+    const float len = cs * static_cast<float>(block.cells.size());
+    const float g = 1.0f - std::pow(1.0f - clampf(grow, 0.0f, 1.0f), 3.0f);
+    // In a frame where the barrier runs along local x.
+    rlPushMatrix();
+    rlTranslatef(block.centre.x, 0.0f, block.centre.z);
+    if (!block.along_x) rlRotatef(90.0f, 0, 1, 0);
+    rlScalef(1.0f, std::max(0.02f, g), 1.0f);
+    const auto part = [&](Vector3 c, Vector3 s, Color fill) {
+        if (!ghost) {
+            // Inverted-hull outline.
+            rlDrawRenderBatchActive();
+            rlSetCullFace(RL_CULL_FACE_FRONT);
+            prim::box(c, {s.x + 0.03f, s.y + 0.03f, s.z + 0.03f}, prim::with_alpha(Color{30, 28, 40, 255}, alpha));
+            rlDrawRenderBatchActive();
+            rlSetCullFace(RL_CULL_FACE_BACK);
+        }
+        prim::box(c, s, col(fill));
+    };
+    // Base: alternating orange and white segments filling the cells.
+    constexpr int kSegments = 6;
+    const float seg = len / kSegments;
+    for (int i = 0; i < kSegments; ++i) {
+        const float x = -len * 0.5f + seg * (i + 0.5f);
+        part({x, 0.14f, 0.0f}, {seg, 0.28f, cs * 0.84f}, i % 2 ? white : orange);
+    }
+    // Posts and a striped board on top.
+    for (float x : {-len * 0.36f, len * 0.36f}) part({x, 0.38f, 0.0f}, {0.05f, 0.22f, 0.05f}, white);
+    for (int i = 0; i < kSegments; ++i) {
+        const float x = -len * 0.45f + len * 0.9f / kSegments * (i + 0.5f);
+        part({x, 0.5f, 0.0f}, {len * 0.9f / kSegments, 0.1f, 0.04f}, i % 2 ? orange : white);
+    }
+    // Amber lamps on the ends of the board.
+    if (!ghost) {
+        for (float x : {-len * 0.45f, len * 0.45f}) {
+            prim::sphere({x, 0.59f, 0.0f}, 0.04f, prim::with_alpha(Color{255, 196, 60, 255}, alpha), 5, 8);
+        }
+    }
+    rlPopMatrix();
+}
+
 void EffectsRenderer::poof(Vec2 at, Color colour) { bursts_.push_back({at, colour, 0.0f, 0.9f}); }
 
 void EffectsRenderer::float_text(Vec2 at, std::string text, Color colour) {

@@ -7,18 +7,27 @@
 // Used both to validate the robotics and to balance the game.
 //
 //   wobo_bench [--map ID|all] [--seeds N] [--seed FIRST] [--limit S] [--kidnap] [--player]
-//              [--localizer NAME] [--planner NAME] [--set key=value]...
+//              [--study] [--localizer NAME] [--planner NAME] [--set key=value]...
 //              [--data DIR] [--csv] [--trace]
 //
 // --trace prints, every two simulated seconds of each run, the true pose,
 // Wobo's estimate and what it is doing (for debugging the agent).
+//
+// --study measures what each player action does to the localizer, with
+// energy and ownership free. "Lock": the moment Wobo is halfway to locking
+// on, the action is used once; how often the lock breaks, how far the
+// estimate strays in the next 20 s, and how long until Wobo is found again.
+// "Spam": the action is used whenever it is off cooldown from the start;
+// how many runs Wobo still localizes in, and how long it takes.
 
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include <initializer_list>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -39,10 +48,41 @@ struct Result {
     float final_head_err = 0.0f;
 };
 
+// A Road Block where it hurts: across Wobo's way ahead if it fits, else the
+// nearest spot it fits within scanner range, so it shows up in the scans.
+std::optional<Pose2D> block_spot(const RunDirector& run) {
+    const Pose2D p = run.sim().true_pose();
+    for (float d : {1.0f, 1.3f, 0.8f, 1.6f}) {
+        const Vec2 at{p.x + std::cos(p.heading_rad) * d, p.z + std::sin(p.heading_rad) * d};
+        const float across = std::fabs(std::cos(p.heading_rad)) > std::fabs(std::sin(p.heading_rad)) ? kPi * 0.5f : 0.0f;
+        for (float h : {across, across + kPi * 0.5f}) {
+            if (run.check_target(ActionId::Block, {at.x, at.z, h}) == ActivateResult::Ok) return Pose2D{at.x, at.z, h};
+        }
+    }
+    std::optional<Pose2D> best;
+    float best_d = 2.5f;
+    for (int cz = 0; cz < run.map().height(); ++cz) {
+        for (int cx = 0; cx < run.map().width(); ++cx) {
+            const Vec2 c = run.map().cell_center(cx, cz);
+            const float d = distance(c, p.position());
+            if (d >= best_d || d < 0.5f) continue;
+            for (float h : {0.0f, kPi * 0.5f}) {
+                if (run.check_target(ActionId::Block, {c.x, c.z, h}) == ActivateResult::Ok) {
+                    best = Pose2D{c.x, c.z, h};
+                    best_d = d;
+                    break;
+                }
+            }
+        }
+    }
+    return best;
+}
+
 // A deliberately ordinary player. When the lock-on alarm would sound (a lock
-// held for a second) it breaks the lock: Kidnap if drafted, else Spin It.
-// When Wobo's guess is merely close it pre-empts with Smoke Bomb or Colour
-// Blind. Drafts the first card offered.
+// held for a second) it breaks the lock: Kidnap if drafted, else Gyro Jam,
+// Gummy Wheels or a Road Block across Wobo's way. When Wobo's guess is merely
+// close it pre-empts with Smoke Bomb or Colour Blind. Drafts the first card
+// offered.
 void bot_step(RunDirector& run, Rng& rng) {
     if (run.phase() == RunPhase::Drafting) {
         run.choose_card(0);
@@ -56,6 +96,14 @@ void bot_step(RunDirector& run, Rng& rng) {
         for (int i = 0; i < 50; ++i) {
             const Pose2D target = run.map().sample_valid_pose(rng, 0.2f);
             if (run.activate(ActionId::Kidnap, target) == ActivateResult::Ok) return;
+        }
+    }
+    if (alarm && run.can_activate(ActionId::Drift) != ActivateResult::Ok) {
+        if (!run.actions().active(ActionId::Gummy) && run.activate(ActionId::Gummy) == ActivateResult::Ok) return;
+        if (run.can_activate(ActionId::Block) == ActivateResult::Ok) {
+            if (const auto spot = block_spot(run); spot && run.activate(ActionId::Block, *spot) == ActivateResult::Ok) {
+                return;
+            }
         }
     }
     const auto order = alarm ? std::initializer_list<ActionId>{ActionId::Drift, ActionId::Range}
@@ -96,7 +144,7 @@ Result run_one(const Config& cfg, const std::string& map, std::uint64_t seed, do
             Pose2D target;
             do {
                 target = run.map().sample_valid_pose(rng, 0.2f);
-            } while (run.check_target(target) != ActivateResult::Ok ||
+            } while (run.check_target(ActionId::Kidnap, target) != ActivateResult::Ok ||
                      distance(target.position(), run.sim().true_pose().position()) < 4.0f);
             run.force_teleport(target);
             kidnapped = true;
@@ -124,6 +172,121 @@ Result run_one(const Config& cfg, const std::string& map, std::uint64_t seed, do
     return r;
 }
 
+// --- --study ------------------------------------------------------------
+
+constexpr ActionId kNoAction = ActionId::Count;
+
+const char* study_name(ActionId id) { return id == kNoAction ? "(none)" : action_info(id).name; }
+
+bool use_action(RunDirector& run, ActionId id, Rng& rng) {
+    if (id == kNoAction) return true;
+    if (id == ActionId::Kidnap) {
+        for (int i = 0; i < 200; ++i) {
+            const Pose2D t = run.map().sample_valid_pose(rng, 0.2f);
+            if (distance(t.position(), run.sim().true_pose().position()) < 4.0f) continue;
+            if (run.activate(id, t) == ActivateResult::Ok) return true;
+        }
+        return false;
+    }
+    if (id == ActionId::Block) {
+        const auto spot = block_spot(run);
+        return spot && run.activate(id, *spot) == ActivateResult::Ok;
+    }
+    return run.activate(id) == ActivateResult::Ok;
+}
+
+struct StudyResult {
+    bool used = false;
+    bool broke = false;          // the lock was lost before Wobo was found
+    double refind_s = -1.0;      // action to localization
+    float peak_err = 0.0f;       // worst estimate error in the 20 s after the action
+    double spam_found_s = -1.0;  // with --spam: time to localization
+};
+
+Config study_config(Config cfg) {
+    for (int i = 0; i < kActionCount; ++i) {
+        cfg.set(std::string("action.") + action_info(static_cast<ActionId>(i)).key + ".owned", "1");
+    }
+    cfg.set("energy.capacity", "1000000");
+    cfg.set("energy.start", "1000000");
+    cfg.set("energy.regen", "1000");
+    cfg.set("run.hour_length", "1000000");
+    return cfg;
+}
+
+StudyResult study_lock(const Config& cfg, const std::string& map, std::uint64_t seed, ActionId id, double limit_s) {
+    StudyResult r;
+    RunDirector run(cfg);
+    if (!run.start(map, seed)) return r;
+    Rng rng(derive_seed(seed, "study"));
+    double used_at = -1.0;
+    const int steps = static_cast<int>(limit_s / run.step_s());
+    for (int i = 0; i < steps && run.phase() != RunPhase::Over; ++i) {
+        if (used_at < 0.0 && run.referee().lock_progress() >= 0.5f) {
+            if (!use_action(run, id, rng)) return r;
+            r.used = true;
+            used_at = run.sim().time_s();
+        }
+        run.step();
+        if (used_at >= 0.0) {
+            if (run.referee().lock_progress() <= 0.0f && run.phase() != RunPhase::Over) r.broke = true;
+            if (run.sim().time_s() - used_at <= 20.0) r.peak_err = std::max(r.peak_err, run.referee().position_error());
+        }
+    }
+    if (r.used && run.phase() == RunPhase::Over) r.refind_s = run.sim().time_s() - used_at;
+    return r;
+}
+
+StudyResult study_spam(const Config& cfg, const std::string& map, std::uint64_t seed, ActionId id, double limit_s) {
+    StudyResult r;
+    RunDirector run(cfg);
+    if (!run.start(map, seed)) return r;
+    Rng rng(derive_seed(seed, "study"));
+    const int steps = static_cast<int>(limit_s / run.step_s());
+    for (int i = 0; i < steps && run.phase() != RunPhase::Over; ++i) {
+        if (id != kNoAction && run.sim().time_s() > 3.0 && run.can_activate(id) == ActivateResult::Ok) {
+            use_action(run, id, rng);
+        }
+        run.step();
+    }
+    if (run.phase() == RunPhase::Over) r.spam_found_s = run.sim().time_s();
+    return r;
+}
+
+double median(std::vector<double> v);
+
+void run_study(const Config& base, const std::vector<std::string>& maps, int first_seed, int seeds, double limit_s) {
+    const Config cfg = study_config(base);
+    const ActionId ids[] = {kNoAction, ActionId::Range, ActionId::Drift, ActionId::Gummy,
+                            ActionId::Colour, ActionId::Block, ActionId::Kidnap};
+    std::printf("%-12s %-13s | %6s %7s %8s %9s | %7s %8s\n", "map", "action", "used", "broke", "refind", "peak err",
+                "spam ok", "median");
+    for (const std::string& map : maps) {
+        for (ActionId id : ids) {
+            int used = 0, broke = 0, spam_ok = 0;
+            std::vector<double> refind, peak, spam;
+            for (int s = first_seed; s < first_seed + seeds; ++s) {
+                const StudyResult a = study_lock(cfg, map, static_cast<std::uint64_t>(s), id, limit_s);
+                if (a.used) {
+                    ++used;
+                    broke += a.broke ? 1 : 0;
+                    // Not found again within the limit counts as the limit.
+                    refind.push_back(a.refind_s >= 0.0 ? a.refind_s : limit_s);
+                    peak.push_back(a.peak_err);
+                }
+                const StudyResult b = study_spam(cfg, map, static_cast<std::uint64_t>(s), id, limit_s);
+                if (b.spam_found_s >= 0.0) {
+                    ++spam_ok;
+                    spam.push_back(b.spam_found_s);
+                }
+            }
+            std::printf("%-12s %-13s | %3d/%-2d %4d/%-2d %7.1fs %8.2fm | %4d/%-2d %7.1fs\n", map.c_str(), study_name(id),
+                        used, seeds, broke, used, median(refind), median(peak), spam_ok, seeds, median(spam));
+            std::fflush(stdout);
+        }
+    }
+}
+
 double median(std::vector<double> v) {
     if (v.empty()) return -1.0;
     std::sort(v.begin(), v.end());
@@ -141,6 +304,7 @@ int main(int argc, char** argv) {
     bool player = false;
     bool csv = false;
     bool trace = false;
+    bool study = false;
     Config cfg = load_game_config();
 
     for (int i = 1; i < argc; ++i) {
@@ -156,6 +320,7 @@ int main(int argc, char** argv) {
         else if (a == "--planner") cfg.set("planner.type", next());
         else if (a == "--csv") csv = true;
         else if (a == "--trace") trace = true;
+        else if (a == "--study") study = true;
         else if (a == "--data") {
             data::set_override_dir(next());
             cfg = load_game_config();
@@ -174,6 +339,11 @@ int main(int argc, char** argv) {
         for (const MapInfo& m : list_maps()) maps.push_back(m.id);
     } else {
         maps.push_back(map_arg);
+    }
+
+    if (study) {
+        run_study(cfg, maps, first_seed, seeds, limit_s);
+        return 0;
     }
 
     if (csv) std::printf("map,seed,time_s,recovery_s,ms_per_sim_s,pos_err,head_err\n");

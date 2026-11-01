@@ -37,10 +37,12 @@ public:
     void reset(std::vector<CardDef> cards, std::uint64_t seed);
 
     // Up to `count` distinct eligible cards. `owned` says whether an action
-    // key is owned. Categories are spread out: once a category is offered,
-    // further cards of it are much less likely in the same offer.
-    template <typename OwnedFn>
-    std::vector<const CardDef*> draw(int count, int hour, OwnedFn owned);
+    // key is owned; `suits` whether it is any use on this map (a card that
+    // grants or needs an unsuitable action is never offered). Categories are
+    // spread out: once a category is offered, further cards of it are much
+    // less likely in the same offer.
+    template <typename OwnedFn, typename SuitsFn>
+    std::vector<const CardDef*> draw(int count, int hour, OwnedFn owned, SuitsFn suits);
 
     void record_pick(const CardDef& card) { ++taken_[card.id]; }
     int taken(const std::string& id) const;
@@ -55,19 +57,20 @@ private:
     Rng rng_;
 };
 
-template <typename OwnedFn>
-std::vector<const CardDef*> CardDraftSystem::draw(int count, int hour, OwnedFn owned) {
+template <typename OwnedFn, typename SuitsFn>
+std::vector<const CardDef*> CardDraftSystem::draw(int count, int hour, OwnedFn owned, SuitsFn suits) {
     std::vector<const CardDef*> eligible;
     for (const CardDef& c : cards_) {
         if (taken(c.id) >= c.max_stack) continue;
         if (hour < c.min_hour) continue;
-        if (!c.requires_action.empty() && !owned(c.requires_action)) continue;
-        // An ability card is pointless once its action is owned.
-        bool grants_owned = false;
+        if (!c.requires_action.empty() && (!owned(c.requires_action) || !suits(c.requires_action))) continue;
+        // An ability card is pointless once its action is owned, or where
+        // its action does nothing.
+        bool pointless = false;
         for (const std::string& e : c.effects) {
-            if (e.rfind("grant ", 0) == 0 && owned(e.substr(6))) grants_owned = true;
+            if (e.rfind("grant ", 0) == 0 && (owned(e.substr(6)) || !suits(e.substr(6)))) pointless = true;
         }
-        if (grants_owned) continue;
+        if (pointless) continue;
         eligible.push_back(&c);
     }
     return draw_from(std::move(eligible), count);

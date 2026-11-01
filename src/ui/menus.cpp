@@ -202,9 +202,10 @@ void draw_help(const HelpLayout& l, float s, int w, int h, Vector2 mouse) {
          kInk},
         {"Your actions",
          "Spend energy (it recharges) on interference. Smoke Bomb: a cloud around Wobo cuts its scanner "
-         "range. Spin It: spin Wobo round so its wheels and gyro misreport motion. Colour Blind: sunglasses "
-         "that scramble the colours it sees. Kidnap (from a card): a crane drops Wobo somewhere else without "
-         "telling its software. Time them for when Wobo is about to see something telling.",
+         "range. Gyro Jam: spin Wobo round so its gyro loses track of which way it faces. From cards: "
+         "Gummy Wheels slows Wobo and makes its wheels overcount; Colour Blind's red-green shades scramble "
+         "the colours it sees; Road Block drops a barrier that isn't on its map; Kidnap has a crane drop it "
+         "somewhere else without telling its software. Time them for when Wobo is about to see something telling.",
          kInk},
         {"Hours and cards",
          "The clock runs one hour at a time. On each hour, draft a card: new abilities, "
@@ -212,7 +213,7 @@ void draw_help(const HelpLayout& l, float s, int w, int h, Vector2 mouse) {
          "noisiest in hour 1 and sharpen every hour after.",
          kInk},
         {"Controls",
-         "1-4 or click: use an action. Kidnap: click a spot, drag to aim. Space: pause. [ ]: speed. "
+         "1-6 or click: use an action. Kidnap and Road Block: click a spot, drag to aim. Space: pause. [ ]: speed. "
          "Drag or right-drag: pan. Wheel or pinch: zoom. B: show beliefs (also in the menu). V: scan lines. Tab: top-down "
          "view. F: centre on Wobo.",
          kMuted},

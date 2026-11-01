@@ -69,6 +69,18 @@ Pose2D Map2D::sample_valid_pose(Rng& rng, float radius) const {
     return {};
 }
 
+std::uint8_t Map2D::add_material(Material m) {
+    materials_.push_back(std::move(m));
+    return static_cast<std::uint8_t>(materials_.size() - 1);
+}
+
+void Map2D::paint(const std::vector<int>& cells, std::uint8_t material) {
+    for (int i : cells) {
+        if (i >= 0 && i < width_ * height_) cells_[static_cast<std::size_t>(i)] = material;
+    }
+    build_derived();
+}
+
 void Map2D::build_derived() {
     // Brute-force distance transform: for each free cell, the distance from
     // its centre to the nearest solid cell's box. Maps are small (a few

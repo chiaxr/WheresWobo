@@ -48,6 +48,12 @@ private:
     Pose2D to_;
 };
 
+// Road Block: a striped barricade on a chunky base, filling its cells (which
+// is what the LiDAR sees). `grow` 0..1 raises it out of the floor; a ghost is
+// the translucent placement preview, tinted by `tint`.
+void draw_road_block(const RoadBlock& block, const Map2D& map, float alpha, float grow, bool ghost,
+                     Color tint = WHITE);
+
 class EffectsRenderer {
 public:
     void clear() {

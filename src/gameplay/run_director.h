@@ -5,6 +5,11 @@
 // referee), and advances them all in lockstep, one fixed step at a time.
 // The renderer and UI read from it and send it commands; tests and the
 // benchmark drive it directly.
+//
+// There are two copies of the map: the known map Wobo was given (and the
+// renderer draws), and the physical world the simulation runs in. They are
+// the same until the player drops a Road Block, which exists only in the
+// world.
 
 #include <memory>
 #include <optional>
@@ -26,7 +31,7 @@ namespace wobo {
 enum class RunPhase { Playing, Drafting, Over };
 
 struct GameEvent {
-    enum class Type { ActionUsed, Teleported, HourEnded, CardChosen, CloseCall, Localized, Spin };
+    enum class Type { ActionUsed, Teleported, HourEnded, CardChosen, CloseCall, Localized, Spin, BlockCleared };
     Type type;
     ActionId action = ActionId::Range;
     Pose2D from;
@@ -42,6 +47,13 @@ struct RunScore {
     int close_calls = 0;
     int spins = 0;           // times Wobo noticed something was wrong
     int cards_taken = 0;
+};
+
+// Road Block: a barrier three cells long, lying along x or z.
+struct RoadBlock {
+    std::vector<int> cells;  // map cell indices (Map2D::index)
+    bool along_x = true;
+    Vec2 centre;
 };
 
 // Load the game configuration (data/configs/game.cfg).
@@ -61,8 +73,14 @@ public:
     // Player commands.
     ActivateResult activate(ActionId id, std::optional<Pose2D> target = std::nullopt);
     ActivateResult can_activate(ActionId id) const;
-    // Checks a kidnap destination without spending anything.
-    ActivateResult check_target(const Pose2D& target) const;
+    // Checks a target without spending anything: a kidnap destination, or
+    // where a Road Block would go (`target.heading_rad` picks its axis).
+    ActivateResult check_target(ActionId id, const Pose2D& target) const;
+    // The barrier a Road Block aimed at `target` would be.
+    RoadBlock block_at(const Pose2D& target) const;
+    // The natural axis for a Road Block at `p` (as a heading for block_at):
+    // across the corridor, unless only the other way fits.
+    float block_heading_at(Vec2 p) const;
     bool choose_card(int index);
     void skip_draft();
     // Kidnap with no cost or checks beyond validity (tools and tests).
@@ -75,7 +93,12 @@ public:
     double step_s() const { return sim_config_.step_s; }
     std::uint64_t seed() const { return seed_; }
     const std::string& map_id() const { return map_id_; }
-    const Map2D& map() const { return *map_; }
+    const Map2D& map() const { return *map_; }      // what Wobo knows
+    const Map2D& world() const { return *world_; }  // what is physically there
+    const std::optional<RoadBlock>& road_block() const { return block_; }
+    // Whether an action's card can be offered on this map: Colour Blind needs
+    // colourful walls, and Road Block somewhere it fits.
+    bool suits_map(const std::string& action_key) const;
     const WorldSimulation& sim() const { return *sim_; }
     const RobotAgent& agent() const { return *agent_; }
     const EnergySystem& energy() const { return energy_; }
@@ -103,6 +126,10 @@ public:
 private:
     void push(GameEvent e) { events_.push_back(std::move(e)); }
     void begin_draft();
+    // InvalidTarget (off the floor), TooClose (on Wobo), CutsOff, or Ok.
+    ActivateResult check_block(const RoadBlock& block) const;
+    void place_block(const RoadBlock& block);
+    void clear_block();
     void apply_card(const CardDef& card);
 
     Config config_;
@@ -111,6 +138,12 @@ private:
     std::string map_id_;
 
     std::unique_ptr<Map2D> map_;
+    std::unique_ptr<Map2D> world_;
+    std::uint8_t block_material_ = 0;
+    std::vector<int> floor_label_;  // 4-connected floor components of the known map, -1 for solid
+    std::optional<RoadBlock> block_;
+    bool colour_matters_ = true;
+    bool block_fits_ = true;
     std::unique_ptr<WorldSimulation> sim_;
     std::unique_ptr<RobotAgent> agent_;
     MotionCommand command_;

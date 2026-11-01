@@ -109,7 +109,7 @@ private:
     RobotModel wobo_;
     EffectsRenderer fx_;
     CraneAnimation crane_;      // Kidnap: holds the simulation while it carries Wobo
-    float spin_start_ = -100.0f;  // render time Spin It was last used
+    float spin_start_ = -100.0f;  // render time Gyro Jam was last used
     InputRouter input_;
 
     Screen screen_ = Screen::Title;
@@ -123,7 +123,8 @@ private:
     bool top_down_ = false;
     int speed_index_ = 0;  // 0: 1x, 1: 2x
 
-    bool targeting_ = false;
+    bool targeting_ = false;    // picking a spot for target_id_ (Kidnap or Road Block)
+    ActionId target_id_ = ActionId::Kidnap;
     bool aiming_ = false;
     bool hover_valid_ = false;
     Pose2D aim_;

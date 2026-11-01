@@ -22,6 +22,8 @@ inline constexpr Color kDanger{255, 90, 95, 255};
 inline constexpr Color kBelief{236, 72, 153, 255};
 inline constexpr Color kGood{6, 214, 160, 255};
 inline constexpr Color kCyan{76, 201, 240, 255};
+inline constexpr Color kGummy{176, 132, 255, 255};     // Gummy Wheels' button
+inline constexpr Color kRoadBlock{170, 220, 60, 255};  // Road Block's button
 inline constexpr Color kOutline{30, 28, 40, 255};
 inline constexpr Color kBackground{12, 15, 29, 255};
 inline constexpr Color kSpot{42, 51, 88, 255};       // a lifted navy (the poster's glow)

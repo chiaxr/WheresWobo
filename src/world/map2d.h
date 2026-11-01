@@ -78,6 +78,11 @@ public:
 
     // Cells a robot of the given radius can stand in the centre of.
     const std::vector<int>& free_cells() const { return free_cells_; }
+
+    // Runtime changes, for the physical world only (the road block): add a
+    // material, and repaint cells, by index(), with one.
+    std::uint8_t add_material(Material m);
+    void paint(const std::vector<int>& cells, std::uint8_t material);
     int index(int cx, int cz) const { return cz * width_ + cx; }
 
 private:

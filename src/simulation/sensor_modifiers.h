@@ -26,7 +26,10 @@ struct SensorModifiers {
 
     // --- Odometry ---
     float odom_noise_scale = 1.0f;   // multiplies the configured noise
+    float odom_distance_noise_scale = 1.0f;  // further multiplies the wheel (distance) noise
+    float odom_turn_noise_scale = 1.0f;      // further multiplies the heading noise
     float odom_scale_bias = 0.0f;    // fractional error on reported distance
+    float odom_turn_scale_bias = 0.0f;  // fractional error on reported rotation
     float odom_turn_bias = 0.0f;     // rad of heading error per metre travelled
     float odom_heading_bias_rps = 0.0f;  // rad/s of heading error while moving
 };

@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "core/data.h"
+#include "gameplay/map_traits.h"
 #include "localization/localizer_registry.h"
 #include "planning/planner_registry.h"
 #include "world/map_loader.h"
@@ -33,9 +34,19 @@ bool RunDirector::start(const std::string& map_id, std::uint64_t seed, std::stri
     map_ = std::make_unique<Map2D>(std::move(*map));
     sim_config_ = SimConfig::from(config_);
 
+    // The physical world starts as the known map, plus the road block's
+    // material for when one is dropped.
+    world_ = std::make_unique<Map2D>(*map_);
+    block_ = std::nullopt;
+    block_material_ = world_->add_material(
+        Material{"road_block", "Road block", Rgb{255, 128, 32}, true, 0.5f, Pattern::Stripes});
+    floor_label_ = label_floor(*map_);
+    colour_matters_ = colourful_wall_share(*map_) >= config_.get_float("action.colour.min_colour_share", 0.1f);
+    block_fits_ = barrier_fits_somewhere(*map_, floor_label_, 3);
+
     Rng start_rng(derive_seed(seed, "start"));
     const Pose2D start_pose = map_->sample_valid_pose(start_rng, sim_config_.dynamics.radius_m);
-    sim_ = std::make_unique<WorldSimulation>(*map_, sim_config_, seed, start_pose);
+    sim_ = std::make_unique<WorldSimulation>(*world_, sim_config_, seed, start_pose);
 
     // The prior is what the robot knows: by default nothing (uniform).
     InitialBelief prior;
@@ -82,6 +93,7 @@ void RunDirector::step() {
     const float dt = static_cast<float>(sim_config_.step_s);
 
     actions_.step(dt);
+    if (block_ && !actions_.active(ActionId::Block)) clear_block();
     const float regen_mult =
         1.0f + (actions_.active_count() > 0
                     ? stats_.get("passive.overclock") * stats_.get("passive.overclock_bonus", 0.5f)
@@ -96,7 +108,10 @@ void RunDirector::step() {
     modifiers_.colour_noise_add += k * config_.get_float("calibration.colour_noise", 0.0f);
     modifiers_.odom_noise_scale *= 1.0f + k * config_.get_float("calibration.odometry_noise", 0.0f);
 
-    const StepResult result = sim_->step(command_, modifiers_);
+    // Gummy Wheels slows Wobo for real; its software asked for full speed.
+    MotionCommand drive = command_;
+    drive.linear_mps *= actions_.speed_scale(stats_);
+    const StepResult result = sim_->step(drive, modifiers_);
     AgentInput input;
     input.odometry = result.odometry;
     input.scan = result.scan ? &*result.scan : nullptr;
@@ -128,11 +143,20 @@ void RunDirector::step() {
     }
 }
 
+bool RunDirector::suits_map(const std::string& action_key) const {
+    if (action_key == "colour") return colour_matters_;
+    if (action_key == "block") return block_fits_;
+    return true;
+}
+
 void RunDirector::begin_draft() {
-    offer_ = cards_.draw(3, hour_, [this](const std::string& key) {
-        const auto id = action_from_key(key);
-        return id && actions_.owned(*id, stats_);
-    });
+    offer_ = cards_.draw(
+        3, hour_,
+        [this](const std::string& key) {
+            const auto id = action_from_key(key);
+            return id && actions_.owned(*id, stats_);
+        },
+        [this](const std::string& key) { return suits_map(key); });
     if (!offer_.empty()) phase_ = RunPhase::Drafting;
 }
 
@@ -146,9 +170,81 @@ ActivateResult RunDirector::can_activate(ActionId id) const {
     return actions_.check(id, stats_, energy_, danger());
 }
 
-ActivateResult RunDirector::check_target(const Pose2D& target) const {
+RoadBlock RunDirector::block_at(const Pose2D& target) const {
+    RoadBlock b;
+    b.along_x = std::fabs(std::cos(target.heading_rad)) >= std::fabs(std::sin(target.heading_rad));
+    const int cx = map_->cell_x(target.x);
+    const int cz = map_->cell_z(target.z);
+    b.centre = map_->cell_center(cx, cz);
+    for (int k = -1; k <= 1; ++k) {
+        const int x = b.along_x ? cx + k : cx;
+        const int z = b.along_x ? cz : cz + k;
+        if (map_->in_bounds(x, z)) b.cells.push_back(map_->index(x, z));
+    }
+    return b;
+}
+
+float RunDirector::block_heading_at(Vec2 p) const {
+    // Count open cells each way: a barrier lies across the shorter run.
+    const int cx = map_->cell_x(p.x);
+    const int cz = map_->cell_z(p.z);
+    const auto run = [&](int dx, int dz) {
+        int n = 0;
+        for (int k = 1; k <= 6 && !map_->solid(cx + dx * k, cz + dz * k); ++k) ++n;
+        return n;
+    };
+    const bool across_x = run(1, 0) + run(-1, 0) <= run(0, 1) + run(0, -1);
+    const float preferred = across_x ? 0.0f : kPi * 0.5f;
+    const float other = across_x ? kPi * 0.5f : 0.0f;
+    if (sim_ && check_block(block_at({p.x, p.z, preferred})) != ActivateResult::Ok &&
+        check_block(block_at({p.x, p.z, other})) == ActivateResult::Ok) {
+        return other;
+    }
+    return preferred;
+}
+
+ActivateResult RunDirector::check_block(const RoadBlock& block) const {
+    if (block.cells.size() != 3) return ActivateResult::InvalidTarget;
+    const int w = map_->width();
+    for (int i : block.cells) {
+        if (map_->solid(i % w, i / w) || world_->solid(i % w, i / w)) return ActivateResult::InvalidTarget;
+    }
+    {
+        // Not on top of Wobo, with a little room to spare.
+        const Pose2D p = sim_->true_pose();
+        const float r = sim_config_.dynamics.radius_m + 0.05f;
+        const float cs = map_->cell_size();
+        for (int i : block.cells) {
+            const float minx = (i % w) * cs;
+            const float minz = (i / w) * cs;
+            const float dx = p.x - clampf(p.x, minx, minx + cs);
+            const float dz = p.z - clampf(p.z, minz, minz + cs);
+            if (dx * dx + dz * dz < r * r) return ActivateResult::TooClose;
+        }
+    }
+    if (!stays_connected(*map_, floor_label_, block.cells)) return ActivateResult::CutsOff;
+    return ActivateResult::Ok;
+}
+
+void RunDirector::place_block(const RoadBlock& block) {
+    if (block_) clear_block();
+    world_->paint(block.cells, block_material_);
+    block_ = block;
+}
+
+void RunDirector::clear_block() {
+    if (!block_) return;
+    // Repaint each cell with what the known map has there.
+    const int w = map_->width();
+    for (int i : block_->cells) world_->paint({i}, map_->material_index(i % w, i / w));
+    push({GameEvent::Type::BlockCleared, ActionId::Block, {block_->centre.x, block_->centre.z, 0.0f}, {}, ""});
+    block_ = std::nullopt;
+}
+
+ActivateResult RunDirector::check_target(ActionId id, const Pose2D& target) const {
     if (!sim_) return ActivateResult::Unavailable;
-    if (!map_->valid_pose(target, sim_config_.dynamics.radius_m)) return ActivateResult::InvalidTarget;
+    if (id == ActionId::Block) return check_block(block_at(target));
+    if (!world_->valid_pose(target, sim_config_.dynamics.radius_m)) return ActivateResult::InvalidTarget;
     const float min_d = stats_.get("action.kidnap.min_distance", 2.0f);
     if (distance(target.position(), sim_->true_pose().position()) < min_d) return ActivateResult::TooClose;
     return ActivateResult::Ok;
@@ -159,7 +255,7 @@ ActivateResult RunDirector::activate(ActionId id, std::optional<Pose2D> target) 
     if (!owns(id)) return ActivateResult::NotOwned;
     if (action_info(id).targeted) {
         if (!target) return ActivateResult::InvalidTarget;
-        const ActivateResult t = check_target(*target);
+        const ActivateResult t = check_target(id, *target);
         if (t != ActivateResult::Ok) return t;
     }
     const ActivateResult r = actions_.activate(id, stats_, energy_, danger());
@@ -174,6 +270,9 @@ ActivateResult RunDirector::activate(ActionId id, std::optional<Pose2D> target) 
         if (stats_.get("passive.aftershock") > 0.5f) {
             actions_.trigger_free(ActionId::Drift, stats_.get("passive.aftershock_duration", 4.0f), stats_);
         }
+    } else if (id == ActionId::Block) {
+        place_block(block_at(*target));
+        e.to = {block_->centre.x, block_->centre.z, 0.0f};
     }
     push(std::move(e));
     return ActivateResult::Ok;

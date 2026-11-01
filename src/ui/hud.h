@@ -46,7 +46,8 @@ HudLayout layout_hud(int w, int h, float s, const RunDirector& run);
 struct HudState {
     bool paused = false;
     int speed_index = 0;           // 0: 1x, 1: 2x
-    bool targeting = false;        // picking a kidnap destination
+    bool targeting = false;        // picking a spot on the map for `target`
+    ActionId target = ActionId::Kidnap;
     Vector2 mouse{};
     std::string toast;
     float toast_alpha = 0.0f;

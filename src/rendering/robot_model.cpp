@@ -18,6 +18,7 @@ constexpr Color kAccent{255, 196, 60, 255};
 constexpr Color kAntennaTip{255, 98, 88, 255};
 constexpr Color kCloth{60, 58, 84, 255};
 constexpr Color kRope{196, 142, 88, 255};
+constexpr Color kGum{255, 128, 196, 255};
 constexpr float kHull = 0.014f;
 
 struct Painter {
@@ -129,14 +130,14 @@ void RobotModel::draw(const ToonShader& shader, Vec2 position, float heading, Fa
 }
 
 void RobotModel::draw_sunglasses(const WoboStyle& style) const {
-    // In the head frame, over the eyes: a red lens and a blue lens in a dark
+    // In the head frame, over the eyes: a red lens and a green lens in a dark
     // frame, with arms running back along the sides of the head.
     const float fx = 0.141f;
     const float ey = 0.385f;
     const Color frame = prim::with_alpha(kOutline, style.alpha);
     prim::box({fx, ey + 0.036f, 0.0f}, {0.012f, 0.016f, 0.25f}, frame);  // brow bar
     for (float side : {-1.0f, 1.0f}) {
-        const Color lens = prim::with_alpha(side < 0 ? Color{255, 70, 80, 255} : Color{60, 140, 255, 255}, style.alpha);
+        const Color lens = prim::with_alpha(side < 0 ? Color{255, 70, 80, 255} : Color{60, 200, 90, 255}, style.alpha);
         prim::box({fx, ey, side * 0.058f}, {0.012f, 0.07f, 0.098f}, frame);
         prim::box({fx + 0.003f, ey, side * 0.058f}, {0.012f, 0.056f, 0.084f}, lens);
         // A glint on each lens.
@@ -182,6 +183,16 @@ void RobotModel::draw_parts(Vec2 position, float heading, Face face, const WoboS
             const float a = -wheel_angle_;
             p.box({std::cos(a) * 0.05f, 0.075f + std::sin(a) * 0.05f, side * 0.176f}, {0.02f, 0.02f, 0.008f},
                   kAccent);
+        }
+        if (style.gummy) {
+            // Lumps of bubblegum on the tyre that turn with it, and one
+            // strand stretched to the floor.
+            for (int i = 0; i < 4; ++i) {
+                const float a = -wheel_angle_ + kTwoPi * i / 4.0f + 0.4f * i;
+                p.ball({std::cos(a) * 0.072f, 0.075f + std::sin(a) * 0.072f, side * 0.145f}, 0.024f + 0.005f * (i % 2),
+                       kGum);
+            }
+            p.cyl({-0.06f, 0.03f, side * 0.145f}, {-0.11f, 0.005f, side * 0.15f}, 0.008f, kGum);
         }
     }
 

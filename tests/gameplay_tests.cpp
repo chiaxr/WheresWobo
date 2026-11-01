@@ -1,5 +1,9 @@
+#include <cstdio>
+
+#include "gameplay/map_traits.h"
 #include "gameplay/run_director.h"
 #include "test.h"
+#include "world/map_loader.h"
 
 using namespace wobo;
 
@@ -64,6 +68,7 @@ TEST("actions: cost, cooldown, duration and ownership") {
 TEST("actions: each action changes only its own data path") {
     RunStats stats = base_stats();
     stats.set("action.colour.owned", 1.0f);
+    stats.set("action.gummy.owned", 1.0f);
     stats.set("energy.capacity", 10000.0f);
     stats.set("energy.start", 10000.0f);
     EnergySystem energy;
@@ -76,9 +81,16 @@ TEST("actions: each action changes only its own data path") {
         REQUIRE(a.activate(id, stats, energy, 0.0f) == ActivateResult::Ok);
         return a.modifiers(stats);
     };
+    const auto distance_untouched = [&](const SensorModifiers& m) {
+        return m.odom_noise_scale == none.odom_noise_scale && m.odom_distance_noise_scale == 1.0f &&
+               m.odom_scale_bias == 0.0f;
+    };
+    const auto heading_untouched = [&](const SensorModifiers& m) {
+        return m.odom_noise_scale == none.odom_noise_scale && m.odom_turn_noise_scale == 1.0f &&
+               m.odom_turn_scale_bias == 0.0f && m.odom_turn_bias == 0.0f && m.odom_heading_bias_rps == 0.0f;
+    };
     const auto odom_untouched = [&](const SensorModifiers& m) {
-        return m.odom_noise_scale == none.odom_noise_scale && m.odom_scale_bias == 0.0f &&
-               m.odom_turn_bias == 0.0f && m.odom_heading_bias_rps == 0.0f;
+        return distance_untouched(m) && heading_untouched(m);
     };
     const auto lidar_untouched = [&](const SensorModifiers& m) {
         return m.range_scale == 1.0f && m.range_noise_add == 0.0f && m.colour_noise_add == 0.0f &&
@@ -91,9 +103,18 @@ TEST("actions: each action changes only its own data path") {
     CHECK(odom_untouched(range));
     CHECK(range.colour_desaturate == 0.0f);
 
+    // Gyro Jam is the heading, Gummy Wheels the distance.
     const SensorModifiers drift = run_one(ActionId::Drift);
     CHECK(lidar_untouched(drift));
-    CHECK(drift.odom_noise_scale > 1.0f);
+    CHECK(distance_untouched(drift));
+    CHECK(drift.odom_turn_noise_scale > 1.0f);
+    CHECK(drift.odom_heading_bias_rps != 0.0f);
+
+    const SensorModifiers gummy = run_one(ActionId::Gummy);
+    CHECK(lidar_untouched(gummy));
+    CHECK(heading_untouched(gummy));
+    CHECK(gummy.odom_distance_noise_scale > 1.0f);
+    CHECK(gummy.odom_scale_bias > 0.0f);
 
     const SensorModifiers colour = run_one(ActionId::Colour);
     CHECK(odom_untouched(colour));
@@ -237,4 +258,129 @@ TEST("kidnap: rejects invalid and too-close destinations") {
     CHECK(run.activate(ActionId::Kidnap, Pose2D{0.1f, 0.1f, 0.0f}) == ActivateResult::InvalidTarget);
     CHECK(run.activate(ActionId::Kidnap) == ActivateResult::InvalidTarget);
     CHECK_NEAR(run.energy().current(), 100.0f, 1e-4);
+}
+
+TEST("gummy wheels: slows Wobo for real while it lasts") {
+    RunStats stats = base_stats();
+    stats.set("action.gummy.owned", 1.0f);
+    stats.set("energy.start", 100.0f);
+    EnergySystem energy;
+    energy.reset(stats);
+    PlayerActionSystem a;
+    a.reset(1);
+    CHECK_NEAR(a.speed_scale(stats), 1.0f, 1e-6);
+    REQUIRE(a.activate(ActionId::Gummy, stats, energy, 0.0f) == ActivateResult::Ok);
+    CHECK(a.speed_scale(stats) < 1.0f);
+    a.step(100.0f);
+    CHECK_NEAR(a.speed_scale(stats), 1.0f, 1e-6);
+}
+
+TEST("map traits: reachability and colour on the shipped maps") {
+    for (const MapInfo& m : list_maps()) {
+        const auto map = load_map(m.id);
+        REQUIRE(map.has_value());
+        const auto labels = label_floor(*map);
+        CHECK(stays_connected(*map, labels, {}));
+        RunDirector run(load_game_config());
+        REQUIRE(run.start(m.id, 1));
+        std::printf("    %-10s colourful wall share %.2f, colour card %s, road block fits %s\n", m.id.c_str(),
+                    colourful_wall_share(*map), run.suits_map("colour") ? "yes" : "no",
+                    run.suits_map("block") ? "yes" : "no");
+    }
+    // Greyscale Yard is grey by design; the gallery is all about colour.
+    CHECK(colourful_wall_share(*load_map("greyscale")) < 0.05f);
+    CHECK(colourful_wall_share(*load_map("gallery")) > 0.3f);
+}
+
+TEST("road block: only in the world, never cutting the map, and it clears") {
+    Config cfg = load_game_config();
+    cfg.set("energy.start", "100");
+    cfg.set("action.block.owned", "1");
+    RunDirector run(cfg);
+    REQUIRE(run.start("offices", 3));
+    const Map2D& map = run.map();
+
+    // Across an office doorway (row 6, the gap at x = 3) the barrier would
+    // shut the office off; the hallway's 3-cell width cannot be closed either.
+    const Vec2 door = map.cell_center(3, 6);
+    CHECK(map.solid(2, 6) && map.solid(4, 6) && !map.solid(3, 6));
+    CHECK(run.check_target(ActionId::Block, {door.x, door.z, kPi * 0.5f}) == ActivateResult::CutsOff);
+    const Vec2 hall = map.cell_center(20, 8);
+    CHECK(run.check_target(ActionId::Block, {hall.x, hall.z, kPi * 0.5f}) == ActivateResult::CutsOff);
+    CHECK(run.check_target(ActionId::Block, {0.1f, 0.1f, 0.0f}) == ActivateResult::InvalidTarget);
+    const Pose2D wobo = run.sim().true_pose();
+    for (float heading : {0.0f, kPi * 0.5f}) {
+        CHECK(run.check_target(ActionId::Block, {wobo.x, wobo.z, heading}) != ActivateResult::Ok);
+    }
+
+    // Along the hallway is fine.
+    REQUIRE(run.check_target(ActionId::Block, {hall.x, hall.z, 0.0f}) == ActivateResult::Ok);
+    REQUIRE(run.activate(ActionId::Block, Pose2D{hall.x, hall.z, 0.0f}) == ActivateResult::Ok);
+    REQUIRE(run.road_block().has_value());
+    CHECK(run.world().solid(20, 8) && run.world().solid(19, 8) && run.world().solid(21, 8));
+    CHECK(!run.map().solid(20, 8));  // Wobo's map never learns about it
+
+    const int steps = static_cast<int>((run.stats().get("action.block.duration") + 1.0f) / run.step_s());
+    for (int i = 0; i < steps && run.phase() != RunPhase::Over; ++i) {
+        run.step();
+        if (run.phase() == RunPhase::Drafting) run.skip_draft();
+    }
+    CHECK(!run.road_block().has_value());
+    CHECK(!run.world().solid(20, 8));
+}
+
+TEST("cards: map-specific abilities are only offered where they work") {
+    Config cfg = load_game_config();
+    cfg.set("run.hour_length", "5");
+    RunDirector grey(cfg);
+    REQUIRE(grey.start("greyscale", 1));
+    CHECK(!grey.suits_map("colour"));
+    RunDirector gallery(cfg);
+    REQUIRE(gallery.start("gallery", 1));
+    CHECK(gallery.suits_map("colour"));
+    CHECK(gallery.suits_map("block"));
+
+    // Over many drafts on the yard, no Colour Blind card (or its upgrade);
+    // on the gallery it turns up.
+    const auto offered = [](const RunDirector& run, bool own_colour) {
+        CardDraftSystem cards;
+        cards.reset(load_cards(), 7);
+        int n = 0;
+        for (int i = 0; i < 300; ++i) {
+            const auto offer = cards.draw(
+                3, 5, [&](const std::string& key) { return own_colour && key == "colour"; },
+                [&](const std::string& key) { return run.suits_map(key); });
+            for (const CardDef* c : offer) n += c->id == "colour" || c->id == "colour_long";
+        }
+        return n;
+    };
+    CHECK(offered(grey, false) == 0);
+    CHECK(offered(grey, true) == 0);
+    CHECK(offered(gallery, false) > 0);
+    CHECK(offered(gallery, true) > 0);
+}
+
+TEST("map traits: a barrier needs three floor cells in a row that nothing depends on") {
+    const std::vector<Material> mats = {Material{"wall", "Wall", Rgb{160, 160, 170}, true},
+                                        Material{"floor", "Floor", Rgb{230, 230, 220}, false}};
+    // A staircase of floor: never three cells in a row, so nothing fits.
+    const int n = 8;
+    std::vector<std::uint8_t> stairs(n * n, 0);
+    for (int i = 0; i < n - 1; ++i) {
+        stairs[i * n + i] = 1;
+        stairs[i * n + i + 1] = 1;
+    }
+    const Map2D a("stairs", n, n, 0.5f, mats, stairs);
+    CHECK(!barrier_fits_somewhere(a, label_floor(a), 3));
+    // A 1-wide corridor joining two 3x3 rooms: any barrier in the corridor
+    // cuts the rooms apart, but one along a room's edge row leaves it whole.
+    std::vector<std::uint8_t> rooms(12 * 5, 0);
+    for (int z = 1; z < 4; ++z) {
+        for (int x = 1; x < 4; ++x) rooms[z * 12 + x] = rooms[z * 12 + x + 7] = 1;
+    }
+    for (int x = 4; x < 8; ++x) rooms[2 * 12 + x] = 1;
+    const Map2D b("rooms", 12, 5, 0.5f, mats, rooms);
+    const auto labels = label_floor(b);
+    CHECK(barrier_fits_somewhere(b, labels, 3));
+    CHECK(!stays_connected(b, labels, {b.index(5, 2)}));  // a single cell in the corridor cuts it
 }

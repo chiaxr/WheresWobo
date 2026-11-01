@@ -66,10 +66,11 @@ void robot_head(Rectangle head, float line) {
 
 void dizzy_robot(Vector2 c, float u, float line, float t) {
     const Rectangle head{c.x - 0.62f * u, c.y - 0.3f * u, 1.24f * u, 0.95f * u};
-    // A swirl round the head.
+    // A still swirl arrow round the head; only the eyes spin.
     const float spin = std::fmod(t * 240.0f, 360.0f);
-    DrawRing(c, 0.92f * u, 1.0f * u, spin, spin + 250.0f, 24, kOutline);
-    const float a = (spin + 250.0f) * DEG2RAD;
+    constexpr float kArc = 150.0f;
+    DrawRing(c, 0.92f * u, 1.0f * u, kArc, kArc + 250.0f, 24, kOutline);
+    const float a = (kArc + 250.0f) * DEG2RAD;
     const Vector2 tip{c.x + std::cos(a) * 0.96f * u, c.y + std::sin(a) * 0.96f * u};
     const Vector2 dir{-std::sin(a), std::cos(a)};
     const Vector2 n{std::cos(a), std::sin(a)};
@@ -116,29 +117,72 @@ void kidnapped_robot(Vector2 c, float u, float line) {
 }
 
 void colour_blind(Vector2 c, float u, float line) {
-    // "RGB", each letter in its own colour.
-    const float fs = 0.95f * u;
-    const char* letters[] = {"R", "G", "B"};
-    const Color colours[] = {Color{235, 64, 64, 255}, Color{40, 190, 90, 255}, Color{60, 120, 240, 255}};
-    float total = 0.0f;
-    for (const char* l : letters) total += measure(l, fs, Weight::Bold);
-    float x = c.x - total * 0.5f;
-    const float y = c.y - 0.82f * u;
-    for (int i = 0; i < 3; ++i) {
-        for (const Vector2 o : {Vector2{-1, 0}, Vector2{1, 0}, Vector2{0, -1}, Vector2{0, 1}}) {
-            text(letters[i], x + o.x * line * 1.5f, y + o.y * line * 1.5f, fs, kOutline, Weight::Bold);
-        }
-        text(letters[i], x, y, fs, colours[i], Weight::Bold);
-        x += measure(letters[i], fs, Weight::Bold);
+    // Sunglasses: a red lens and a green lens, a bridge, and arms.
+    const Color lenses[] = {Color{255, 70, 80, 255}, Color{60, 200, 90, 255}};
+    const float lw = 0.78f * u;
+    const float lh = 0.62f * u;
+    const float cy = c.y + 0.05f * u;
+    DrawLineEx({c.x - 0.96f * u, cy - 0.3f * u}, {c.x - 0.8f * u, cy - 0.12f * u}, line * 2.4f, kOutline);
+    DrawLineEx({c.x + 0.96f * u, cy - 0.3f * u}, {c.x + 0.8f * u, cy - 0.12f * u}, line * 2.4f, kOutline);
+    DrawLineEx({c.x - 0.14f * u, cy - 0.16f * u}, {c.x + 0.14f * u, cy - 0.16f * u}, line * 2.6f, kOutline);
+    for (int i = 0; i < 2; ++i) {
+        const float side = i == 0 ? -1.0f : 1.0f;
+        const Rectangle lens{c.x + side * 0.5f * u - lw * 0.5f, cy - lh * 0.5f, lw, lh};
+        rounded(lens, 0.55f, lenses[i], line * 1.4f);
+        // A glint.
+        DrawLineEx({lens.x + lw * 0.22f, lens.y + lh * 0.3f}, {lens.x + lw * 0.42f, lens.y + lh * 0.18f}, line * 1.6f,
+                   Color{255, 255, 255, 190});
     }
-    // Swap arrows: right along the top, left along the bottom.
-    const float w = 0.7f * u;
-    const float t = 0.12f * u;
-    const float y1 = c.y + 0.42f * u, y2 = c.y + 0.75f * u;
-    DrawLineEx({c.x - w, y1}, {c.x + w - 0.2f * u, y1}, t, kOutline);
-    DrawTriangle({c.x + w, y1}, {c.x + w - 0.26f * u, y1 - 0.17f * u}, {c.x + w - 0.26f * u, y1 + 0.17f * u}, kOutline);
-    DrawLineEx({c.x - w + 0.2f * u, y2}, {c.x + w, y2}, t, kOutline);
-    DrawTriangle({c.x - w, y2}, {c.x - w + 0.26f * u, y2 + 0.17f * u}, {c.x - w + 0.26f * u, y2 - 0.17f * u}, kOutline);
+}
+
+void gummy_wheel(Vector2 c, float u, float line) {
+    // A tyre and hub, with pink bubblegum wrapped round the top and a strand
+    // stretched off to the side.
+    const Color gum{255, 128, 196, 255};
+    const Color gum_light{255, 190, 226, 255};
+    blob(c, 0.82f * u, Color{56, 58, 76, 255}, line);
+    // Tread blocks round the tyre.
+    for (int i = 0; i < 12; ++i) {
+        const float a = kTwoPi * i / 12.0f;
+        const Vector2 dir{std::cos(a), std::sin(a)};
+        DrawLineEx({c.x + dir.x * 0.6f * u, c.y + dir.y * 0.6f * u}, {c.x + dir.x * 0.8f * u, c.y + dir.y * 0.8f * u},
+                   0.09f * u, Color{96, 100, 122, 255});
+    }
+    blob(c, 0.4f * u, Color{170, 176, 196, 255}, line);
+    DrawCircleV(c, 0.12f * u, kOutline);
+    DrawRing(c, 0.56f * u, 0.98f * u + line, 200.0f, 340.0f, 20, kOutline);
+    DrawRing(c, 0.56f * u + line, 0.98f * u, 203.0f, 337.0f, 20, gum);
+    blob({c.x - 0.62f * u, c.y - 0.42f * u}, 0.2f * u, gum, line);
+    blob({c.x + 0.7f * u, c.y - 0.5f * u}, 0.16f * u, gum, line);
+    DrawCircleV({c.x - 0.1f * u, c.y - 0.86f * u}, 0.09f * u, gum_light);
+    // The strand.
+    DrawLineEx({c.x + 0.74f * u, c.y + 0.3f * u}, {c.x + 1.0f * u, c.y + 0.86f * u}, 0.1f * u + 2 * line, kOutline);
+    DrawLineEx({c.x + 0.74f * u, c.y + 0.3f * u}, {c.x + 1.0f * u, c.y + 0.86f * u}, 0.1f * u, gum);
+    blob({c.x + 0.74f * u, c.y + 0.3f * u}, 0.13f * u, gum, line);
+}
+
+void road_block(Vector2 c, float u, float line) {
+    // A barricade: two legs, and a board with diagonal orange-and-white
+    // stripes, a lamp on top.
+    const Color orange{255, 128, 32, 255};
+    const Color white{240, 240, 236, 255};
+    for (float side : {-1.0f, 1.0f}) {
+        const float x = c.x + side * 0.62f * u;
+        DrawLineEx({x, c.y - 0.1f * u}, {x - side * 0.14f * u, c.y + 0.9f * u}, 0.14f * u + 2 * line, kOutline);
+        DrawLineEx({x, c.y - 0.1f * u}, {x - side * 0.14f * u, c.y + 0.9f * u}, 0.14f * u, white);
+    }
+    const Rectangle board{c.x - 0.95f * u, c.y - 0.38f * u, 1.9f * u, 0.56f * u};
+    rounded(board, 0.2f, white, line);
+    BeginScissorMode(static_cast<int>(board.x), static_cast<int>(board.y), static_cast<int>(board.width + 1),
+                     static_cast<int>(board.height + 1));
+    for (int i = -1; i < 6; i += 2) {
+        const float x0 = board.x + i * 0.34f * u;
+        DrawTriangle({x0, board.y + board.height}, {x0 + 0.34f * u, board.y + board.height}, {x0 + 0.34f * u + board.height, board.y}, orange);
+        DrawTriangle({x0, board.y + board.height}, {x0 + 0.34f * u + board.height, board.y}, {x0 + board.height, board.y}, orange);
+    }
+    EndScissorMode();
+    DrawRectangleRoundedLinesEx(board, 0.2f, 6, line, kOutline);
+    blob({c.x, c.y - 0.58f * u}, 0.17f * u, Color{255, 196, 60, 255}, line);
 }
 
 }  // namespace
@@ -151,6 +195,8 @@ void action_icon(ActionId id, Vector2 centre, float size, float time_s) {
         case ActionId::Drift: dizzy_robot(centre, u, line, time_s); break;
         case ActionId::Kidnap: kidnapped_robot(centre, u, line); break;
         case ActionId::Colour: colour_blind(centre, u, line); break;
+        case ActionId::Gummy: gummy_wheel(centre, u, line); break;
+        case ActionId::Block: road_block(centre, u, line); break;
         case ActionId::Count: break;
     }
 }
