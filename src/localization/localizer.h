@@ -26,6 +26,11 @@ public:
     virtual void predict(const OdometryDelta& odometry) = 0;
     virtual void observe(const RgbLidarScan& scan) = 0;
 
+    // Its compute, as a multiple of the configured budget (1), e.g. of its
+    // particles. Wobo's computer warms up as a run goes on, from a fraction
+    // to more than 1; methods with nothing to scale may ignore it.
+    virtual void set_budget(float share) { (void)share; }
+
     virtual PoseEstimate estimate() const = 0;
     // nullptr when the method has no diagnostics to offer.
     virtual const LocalizationDiagnostics* diagnostics() const = 0;

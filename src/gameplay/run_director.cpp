@@ -91,6 +91,7 @@ bool RunDirector::start(const std::string& map_id, std::uint64_t seed, std::stri
     hour_length_s_ = std::max(5.0f, config_.get_float("run.hour_length", 40.0f));
     hour_time_s_ = 0.0;
     hour_ = 1;
+    apply_compute_budget();
     kidnaps_ = 0;
     last_close_calls_ = 0;
     last_spins_ = 0;
@@ -165,6 +166,7 @@ void RunDirector::step() {
         hour_time_s_ = 0.0;
         push({GameEvent::Type::HourEnded, ActionId::Range, {}, {}, "Hour " + std::to_string(hour_) + " survived"});
         ++hour_;
+        apply_compute_budget();
         begin_draft();
     }
 }
@@ -190,6 +192,27 @@ void RunDirector::begin_draft() {
 float RunDirector::calibration_noise() const {
     return std::pow(clampf(config_.get_float("calibration.hourly_factor", 1.0f), 0.0f, 1.0f),
                     static_cast<float>(hour_ - 1));
+}
+
+float RunDirector::compute_share() const {
+    const float gap = std::pow(clampf(config_.get_float("compute.hourly_factor", 1.0f), 0.0f, 1.0f),
+                               static_cast<float>(hour_ - 1));
+    const float last = std::max(0.05f, config_.get_float("compute.final_share", 1.0f));
+    return last - (last - clampf(config_.get_float("compute.share", 1.0f), 0.0f, last)) * gap;
+}
+
+float RunDirector::compute_update_hz() const {
+    const float full = std::max(0.1f, config_.get_float("sensor.scan_hz", 4.0f));
+    const float first = config_.get_float("compute.update_hz", 0.0f);
+    if (first <= 0.0f || first >= full) return 0.0f;
+    const float gap = std::pow(clampf(config_.get_float("compute.hourly_factor", 1.0f), 0.0f, 1.0f),
+                               static_cast<float>(hour_ - 1));
+    const float hz = full - (full - first) * gap;
+    return hz >= full - 0.05f ? 0.0f : hz;
+}
+
+void RunDirector::apply_compute_budget() {
+    if (agent_) agent_->set_budget(compute_share(), compute_update_hz());
 }
 
 ActivateResult RunDirector::can_activate(ActionId id) const {

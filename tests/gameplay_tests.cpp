@@ -59,6 +59,8 @@ TEST("actions: cost, cooldown, duration and ownership") {
     const float duration = stats.get("action.range.duration");
     actions.step(duration + 0.01f);
     CHECK(!actions.active(ActionId::Range));
+    // The cooldown only starts once the effect is over.
+    CHECK(actions.check(ActionId::Range, stats, energy, 0.0f) == ActivateResult::Cooldown);
     actions.step(stats.get("action.range.cooldown"));
     CHECK(actions.check(ActionId::Range, stats, energy, 0.0f) == ActivateResult::Ok);
 

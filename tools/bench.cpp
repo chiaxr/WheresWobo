@@ -2,19 +2,19 @@
 // across maps and seeds, and reports how quickly (and whether) it localizes,
 // how long it takes to recover from a kidnapping (--kidnap: teleported as soon
 // as it is halfway to locking on), and the CPU cost per simulated second.
-// --player adds a simple scripted saboteur (see bot_step) so balance changes
-// can be judged by how many hours a reasonable player survives.
+// --player [weak|medium|strong] adds a scripted saboteur (see bot_step) so
+// balance changes can be judged by how many hours players of each skill last.
 // Used both to validate the robotics and to balance the game.
 //
-//   wobo_bench [--map ID|all] [--seeds N] [--seed FIRST] [--limit S] [--kidnap] [--player]
+//   wobo_bench [--map ID|all] [--seeds N] [--seed FIRST] [--limit S] [--kidnap] [--player [LEVEL]]
 //              [--study [--only KEY,...]] [--localizer NAME] [--planner NAME] [--set key=value]...
 //              [--data DIR] [--csv] [--trace]
 //
 // --trace prints, every two simulated seconds of each run, the true pose,
 // Wobo's estimate and what it is doing (for debugging the agent).
 //
-// --study measures what each player action does to the localizer, with
-// energy and ownership free. "Lock": the moment Wobo is halfway to locking
+// --study measures what each player action does to the localizer at full
+// strength (final compute, fully calibrated), with energy and ownership free. "Lock": the moment Wobo is halfway to locking
 // on, the action is used once; how often the lock breaks, how far the
 // estimate strays in the next 20 s, and how long until Wobo is found again.
 // "Spam": the action is used whenever it is off cooldown from the start;
@@ -80,52 +80,139 @@ std::optional<Pose2D> block_spot(const RunDirector& run) {
     return best;
 }
 
-// A deliberately ordinary player. When the lock-on alarm would sound (a lock
-// held for a second) it breaks the lock: Kidnap if drafted, else Gyro Jam,
-// Gummy Wheels or a Road Block across Wobo's way. When Wobo's guess is merely
-// close it pre-empts with Smoke Bomb or Colour Blind. Drafts the first card
-// offered.
-void bot_step(RunDirector& run, Rng& rng) {
+// Scripted saboteurs of three skill levels (--player weak|medium|strong), so
+// balance changes can be judged by the hour each one reaches.
+enum class Profile { None, Weak, Medium, Strong };
+
+bool lock_alarm(const RunDirector& run) {
+    const LocalizationReferee& ref = run.referee();
+    return ref.lock_progress() * ref.config().stability_s >= 1.0f;
+}
+
+bool kidnap_anywhere(RunDirector& run, Rng& rng) {
+    for (int i = 0; i < 50; ++i) {
+        const Pose2D target = run.map().sample_valid_pose(rng, 0.2f);
+        if (run.activate(ActionId::Kidnap, target) == ActivateResult::Ok) return true;
+    }
+    return false;
+}
+
+bool block_ahead(RunDirector& run) {
+    if (run.can_activate(ActionId::Block) != ActivateResult::Ok) return false;
+    const auto spot = block_spot(run);
+    return spot && run.activate(ActionId::Block, *spot) == ActivateResult::Ok;
+}
+
+// An ordinary player, who keeps something running all the time: any action
+// that is ready and affordable, in a fixed order (Gyro Jam, Smoke Bomb,
+// Gummy Wheels, Colour Blind, a Road Block across Wobo's way), whether or not
+// Wobo is anywhere near the truth. Saves Kidnap, to a random spot, for the
+// lock-on alarm (a lock held for a second). Drafts the first card offered.
+void medium_step(RunDirector& run, Rng& rng) {
     if (run.phase() == RunPhase::Drafting) {
         run.choose_card(0);
         return;
     }
-    const LocalizationReferee& ref = run.referee();
-    const bool alarm = ref.lock_progress() * ref.config().stability_s >= 1.0f;
-    const bool close = ref.position_error() < 1.0f && run.actions().active_count() == 0;
-    if (!alarm && !close) return;
-    if (alarm && run.can_activate(ActionId::Kidnap) == ActivateResult::Ok) {
-        for (int i = 0; i < 50; ++i) {
-            const Pose2D target = run.map().sample_valid_pose(rng, 0.2f);
-            if (run.activate(ActionId::Kidnap, target) == ActivateResult::Ok) return;
-        }
+    if (lock_alarm(run) && run.can_activate(ActionId::Kidnap) == ActivateResult::Ok && kidnap_anywhere(run, rng)) return;
+    for (ActionId id : {ActionId::Drift, ActionId::Range, ActionId::Gummy, ActionId::Colour}) {
+        if (!run.actions().active(id) && run.activate(id) == ActivateResult::Ok) return;
     }
-    if (alarm && run.can_activate(ActionId::Drift) != ActivateResult::Ok) {
-        if (!run.actions().active(ActionId::Gummy) && run.activate(ActionId::Gummy) == ActivateResult::Ok) return;
-        if (run.can_activate(ActionId::Block) == ActivateResult::Ok) {
-            if (const auto spot = block_spot(run); spot && run.activate(ActionId::Block, *spot) == ActivateResult::Ok) {
-                return;
+    block_ahead(run);
+}
+
+// A beginner: drafts at random and, about every other second, presses any
+// action that is ready and affordable, Kidnap (to a random spot) included,
+// whatever Wobo is doing; so it is often short of energy when it matters.
+void weak_step(RunDirector& run, Rng& rng, double& next_look_s) {
+    if (run.phase() == RunPhase::Drafting) {
+        run.choose_card(static_cast<int>(rng.below(static_cast<std::uint32_t>(run.offer().size()))));
+        return;
+    }
+    if (run.sim().time_s() < next_look_s) return;
+    next_look_s = run.sim().time_s() + 1.0;
+    if (!rng.chance(0.6f)) return;
+    std::vector<ActionId> usable;
+    for (int i = 0; i < static_cast<int>(ActionId::Count); ++i) {
+        const auto id = static_cast<ActionId>(i);
+        if (!run.actions().active(id) && run.can_activate(id) == ActivateResult::Ok) usable.push_back(id);
+    }
+    if (usable.empty()) return;
+    const ActionId id = usable[rng.below(static_cast<std::uint32_t>(usable.size()))];
+    if (id == ActionId::Kidnap) kidnap_anywhere(run, rng);
+    else if (id == ActionId::Block) block_ahead(run);
+    else run.activate(id);
+}
+
+// An expert: plays like the ordinary player (holding energy back measured
+// worse than spending it), but drafts by a fixed priority (Kidnap and what
+// feeds it, then Gyro Jam, energy, and the rest, as --study ranks them),
+// favours the stronger effects, and Kidnaps to the spot farthest from where
+// Wobo thinks it is.
+void strong_step(RunDirector& run, Rng& rng) {
+    static const char* const kPriority[] = {
+        "kidnap", "spare_kidnap", "kidnap_cool", "kidnap_cheap", "drift_long", "aftershock", "battery",
+        "capacitor", "solar", "overclock", "vertigo", "drift_strong", "gummy", "gummy_sticky", "block",
+        "block_long", "brinkmanship", "chain_reaction", "power_surge", "cold_snap", "colour", "repaint",
+        "colour_long", "range_cheap", "range_long", "range_deep", "static_cling"};
+    if (run.phase() == RunPhase::Drafting) {
+        int best = 0;
+        std::size_t best_rank = std::size(kPriority);
+        for (std::size_t i = 0; i < run.offer().size(); ++i) {
+            for (std::size_t r = 0; r < best_rank; ++r) {
+                if (run.offer()[i]->id == kPriority[r]) {
+                    best = static_cast<int>(i);
+                    best_rank = r;
+                }
             }
         }
+        run.choose_card(best);
+        return;
     }
-    const auto order = alarm ? std::initializer_list<ActionId>{ActionId::Drift, ActionId::Range}
-                             : std::initializer_list<ActionId>{ActionId::Range, ActionId::Colour};
-    for (ActionId id : order) {
+    if (lock_alarm(run) && run.can_activate(ActionId::Kidnap) == ActivateResult::Ok) {
+        const Vec2 guess = run.agent().estimate().pose.position();
+        std::optional<Pose2D> far;
+        float far_d = 0.0f;
+        for (int i = 0; i < 40; ++i) {
+            const Pose2D t = run.map().sample_valid_pose(rng, 0.2f);
+            const float d = distance(t.position(), guess);
+            if (d > far_d && run.check_target(ActionId::Kidnap, t) == ActivateResult::Ok) {
+                far = t;
+                far_d = d;
+            }
+        }
+        if (far && run.activate(ActionId::Kidnap, *far) == ActivateResult::Ok) return;
+    }
+    for (ActionId id : {ActionId::Drift, ActionId::Gummy, ActionId::Colour, ActionId::Range}) {
         if (!run.actions().active(id) && run.activate(id) == ActivateResult::Ok) return;
+    }
+    block_ahead(run);
+}
+
+void bot_step(Profile profile, RunDirector& run, Rng& rng, double& next_look_s) {
+    switch (profile) {
+        case Profile::Weak: weak_step(run, rng, next_look_s); break;
+        case Profile::Medium: medium_step(run, rng); break;
+        case Profile::Strong: strong_step(run, rng); break;
+        case Profile::None: break;
     }
 }
 
 void trace_line(const RunDirector& run) {
     const Pose2D t = run.sim().true_pose();
     const PoseEstimate e = run.agent().estimate();
-    std::printf("  %6.1f true(%5.1f,%5.1f,%4.0f) est(%5.1f,%5.1f,%4.0f) conf %.2f cons %.2f err %5.2f %s%s\n",
+    std::string effects;
+    for (int i = 0; i < static_cast<int>(ActionId::Count); ++i) {
+        if (run.actions().active(static_cast<ActionId>(i))) effects += std::string(" +") + action_info(static_cast<ActionId>(i)).key;
+    }
+    std::printf("  %6.1f true(%5.1f,%5.1f,%4.0f) est(%5.1f,%5.1f,%4.0f) conf %.2f cons %.2f err %5.2f E%3.0f %s%s%s\n",
                 run.sim().time_s(), t.x, t.z, t.heading_rad * kRadToDeg, e.pose.x, e.pose.z,
                 e.pose.heading_rad * kRadToDeg, e.confidence, e.consistency, run.referee().position_error(),
-                run.agent().plan().reason.c_str(), run.agent().moving() ? "" : " (still)");
+                run.energy().current(), run.agent().plan().reason.c_str(), run.agent().moving() ? "" : " (still)",
+                effects.c_str());
 }
 
 Result run_one(const Config& cfg, const std::string& map, std::uint64_t seed, double limit_s,
-               bool kidnap, bool player, bool trace) {
+               bool kidnap, Profile player, bool trace) {
     Result r;
     RunDirector run(cfg);
     std::string err;
@@ -138,6 +225,7 @@ Result run_one(const Config& cfg, const std::string& map, std::uint64_t seed, do
     bool kidnapped = false;
     double kidnap_time = 0.0;
     Rng rng(derive_seed(seed, "bench"));
+    double next_look_s = 0.0;
 
     const auto t0 = std::chrono::steady_clock::now();
     const int steps = static_cast<int>(limit_s / run.step_s());
@@ -153,11 +241,11 @@ Result run_one(const Config& cfg, const std::string& map, std::uint64_t seed, do
             kidnap_time = run.sim().time_s();
             r.time_s = kidnap_time;
         }
-        if (player) bot_step(run, rng);
+        bot_step(player, run, rng, next_look_s);
         if (trace && i % static_cast<int>(2.0 / run.step_s()) == 0) trace_line(run);
         run.step();
         if (run.phase() == RunPhase::Drafting) {
-            if (player) bot_step(run, rng);
+            if (player != Profile::None) bot_step(player, run, rng, next_look_s);
             else run.skip_draft();
         }
     }
@@ -213,6 +301,14 @@ Config study_config(Config cfg) {
     cfg.set("energy.start", "1000000");
     cfg.set("energy.regen", "1000");
     cfg.set("run.hour_length", "1000000");
+    // One endless hour would leave Wobo as it is in hour 1, on little
+    // compute and uncalibrated: measure against it at full strength instead,
+    // with the compute it ends up with.
+    cfg.set("compute.share", std::to_string(cfg.get_float("compute.final_share", 1.0f)));
+    cfg.set("compute.update_hz", "0");
+    cfg.set("calibration.range_noise", "0");
+    cfg.set("calibration.colour_noise", "0");
+    cfg.set("calibration.odometry_noise", "0");
     return cfg;
 }
 
@@ -306,7 +402,7 @@ int main(int argc, char** argv) {
     int first_seed = 1;
     double limit_s = 300.0;
     bool kidnap = false;
-    bool player = false;
+    Profile player = Profile::None;
     bool csv = false;
     bool trace = false;
     bool study = false;
@@ -321,7 +417,18 @@ int main(int argc, char** argv) {
         else if (a == "--seed") first_seed = std::atoi(next().c_str());
         else if (a == "--limit") limit_s = std::atof(next().c_str());
         else if (a == "--kidnap") kidnap = true;
-        else if (a == "--player") player = true;
+        else if (a == "--player") {
+            player = Profile::Medium;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                const std::string level = next();
+                if (level == "weak") player = Profile::Weak;
+                else if (level == "strong") player = Profile::Strong;
+                else if (level != "medium") {
+                    std::fprintf(stderr, "unknown player %s (weak, medium or strong)\n", level.c_str());
+                    return 2;
+                }
+            }
+        }
         else if (a == "--localizer") cfg.set("localizer.type", next());
         else if (a == "--planner") cfg.set("planner.type", next());
         else if (a == "--csv") csv = true;

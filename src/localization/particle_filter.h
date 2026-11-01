@@ -59,6 +59,9 @@ public:
     void reset(const Map2D& known_map, const InitialBelief& prior, std::uint64_t seed) override;
     void predict(const OdometryDelta& odometry) override;
     void observe(const RgbLidarScan& scan) override;
+    // Scales the particle count (the set grows or shrinks at the next
+    // update) and the random poses tried per injected particle.
+    void set_budget(float share) override;
     PoseEstimate estimate() const override { return estimate_; }
     const LocalizationDiagnostics* diagnostics() const override { return &diag_; }
 
@@ -73,6 +76,9 @@ private:
     };
 
     void resample(float inject_fraction);
+    std::size_t target_particles() const;
+    int inject_candidates() const;
+    int beam_stride() const;
     float log_likelihood(const Pose2D& pose) const;  // against beams_
     void update_estimate();
     Pose2D sample_prior();
@@ -82,6 +88,7 @@ private:
     InitialBelief prior_;
     Rng rng_;
 
+    float budget_ = 1.0f;
     LocalizationDiagnostics diag_;  // diag_.particles is the particle set itself
     PoseEstimate estimate_;
     std::vector<float> log_lik_;

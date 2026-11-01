@@ -62,7 +62,7 @@ void draw_cards(const CardLayout& l, float s, int w, int h, int hour_survived,
     std::snprintf(title, sizeof(title), "Hour %d survived!", hour_survived);
     const float top = l.cards.empty() ? h * 0.3f : l.cards[0].y;
     text_centered(title, w * 0.5f, top - 86.0f * s, 38.0f * s, kEnergy, Weight::Bold);
-    text_centered("Wobo is still lost - but its sensors recalibrate on the hour. Pick an upgrade.", w * 0.5f,
+    text_centered("Wobo is still lost - but it thinks faster every hour. Pick a card.", w * 0.5f,
                   top - 42.0f * s, 18.0f * s,
                   kInk);
 

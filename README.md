@@ -21,7 +21,14 @@ You've kidnapped Wobo. Now it's fully-recharged and ready to find out where it i
 
 What you see: the solid robot is the real Wobo. The see-through pink Wobo is where it *thinks* it is, pink arrows are its particles, and pink rings are its strongest hypotheses. The white rays are its last scan, and the dashed ring is how far it can currently see. A red tether runs from Wobo to its guess, labelled with how far off it is. When the guess is genuinely right, the red capture ring around Wobo and an outline around the status box fill up as it locks on; once a lock has held for a second the screen edges pulse and a countdown appears. The pink bar is Wobo's own confidence, which can be confidently wrong. The run ends when Wobo's estimate is *actually* right (checked against ground truth) for four seconds straight.
 
-Each hour runs once round the clock beside the hour counter (one real minute at 1x, half that at 2x). On the hour you draft a card: new abilities, upgrades, more energy, passives and one-shots. Wobo's sensors also recalibrate on the hour: in hour 1 they are noisier than their rating (and its localizer doesn't know it), and the extra noise shrinks by 40% each hour (`[calibration]` in `game.cfg`). The results screen shows how long you lasted, e.g. "Lost until Hour 3, 42 min".
+Each hour runs once round the clock beside the hour counter (one real minute at 1x, half that at 2x). On the hour you draft a card: new abilities, upgrades, more energy, passives and one-shots. Wobo gets sharper on the hour too, so a run starts easy and gets harder:
+
+- **Its computer warms up.** In hour 1 its localizer has 20% of its compute (500 particles) and updates every 2 s; each hour the gap to its final budget, 300%, shrinks by 20%. It has its full 2500 particles by hour 3 and spends the rest on reading more of each scan: every third beam from hour 3 (of 32; every fourth before), every other beam from hour 5, every beam from hour 11. It updates 2.6 times a second by hour 5 and 3.5 by hour 10, of the scanner's 4 (`[compute]` in `game.cfg`; the line under Wobo's mood reads "compute cores running at 185%").
+- **Its sensors recalibrate.** In hour 1 they are noisier than their rating (and its localizer doesn't know it); the extra noise shrinks by 30% each hour (`[calibration]`).
+
+Your side stays fixed: costs, cooldowns and energy regen only change through the cards you draft.
+
+The results screen shows how long you lasted, e.g. "Lost until Hour 3, 42 min".
 
 ### Abilities
 
@@ -34,7 +41,7 @@ Each hour runs once round the clock beside the hour counter (one real minute at 
 | Road Block | Card | A 1.5 m barricade you place (drag to turn it) for 12 s. It is physically there, so the LiDAR sees it and Wobo bumps into it, but it is not on Wobo's map. It may not cut any floor off from the rest, or land on Wobo. Only offered on maps where it fits somewhere |
 | Kidnap | Card | A crane carries Wobo to a spot you pick (at least 2 m away). Wobo's software is told nothing |
 
-Cards add the last four abilities, and upgrade any owned ability's duration, strength, cost or cooldown.
+Cards add the last four abilities, and upgrade any owned ability's duration, strength, cost or cooldown. An ability's cooldown starts when its effect wears off, so however long its upgrades make it, no effect can be kept up for good.
 
 ## Maps
 
@@ -52,22 +59,49 @@ Props (tables, sculptures, hay bales, houses) are part of Wobo's map and are tes
 
 ### Difficulty
 
-Measured with `wobo_bench` and the shipped `game.cfg`. "Unaided" has no player: runs localized within 300 s (16 seeds) and the median time. "Kidnap" is how often, and how quickly, Wobo re-localizes after being teleported halfway through locking on. "Scripted player" uses `--player`, a simple bot that drafts the first card offered and uses every ability at sensible moments; it gives the median survival time and hour, the middle half of the hours, and how many of 32 runs reached the 1500 s limit (hour 25). The maps are listed, and shown in the menu, in order of the scripted player's median.
+Measured with `wobo_bench` and the shipped `game.cfg` (16 seeds per map). "Unaided" has no player: runs localized within 300 s and the median time. "Kidnap" is how often, and how quickly, Wobo re-localizes after being teleported halfway through locking on. The three player columns are scripted saboteurs (`--player weak|medium|strong`, 1500 s limit = hour 25): the median hour reached, the middle half of the hours, and how many runs reached the limit.
 
-| Map | For the player | Unaided | Kidnap: recovered, median | Scripted player lasts until |
-|---|---|---|---|---|
-| Dining Hall | Easy | 16/16, 28 s | 16/16, 25 s | hour 5–6 (median 300 s; hours 3–9; 6/32 survive) |
-| Barn | Medium | 16/16, 34 s | 16/16, 23 s | hour 5 (median 270 s; hours 2–13; 5/32 survive) |
-| Art Gallery | Medium | 16/16, 36 s | 16/16, 21 s | hour 5 (median 264 s; hours 3–8; 5/32 survive) |
-| Königsberg | Hard | 16/16, 44 s | 16/16, 19 s | hour 3–4 (median 181 s; hours 2–7; 5/32 survive) |
-| Office | Hard | 16/16, 35 s (mean 69 s) | 14/16, 34 s | hour 3 (median 169 s; hours 2–7; 3/32 survive) |
+- **Weak** drafts at random and, about every other second, presses any ability that is ready, Kidnap included, whatever Wobo is doing.
+- **Medium** keeps every ability it can afford running all the time and saves Kidnap, to a random spot, for the lock-on alarm.
+- **Strong** plays like Medium but drafts by a priority list (Kidnap and its upgrades, Gyro Jam, energy), favours the stronger effects and Kidnaps Wobo to the spot farthest from its guess.
 
-Unaided, Wobo finds itself on every map. How quickly it does is a poor guide to how hard a map is for the player, because a map's look-alikes matter most once the player starts turning Wobo's belief:
+| Map | For the player | Unaided | Kidnap: recovered, median | Weak | Medium | Strong |
+|---|---|---|---|---|---|---|
+| Barn | Medium | 16/16, 162 s | 16/16, 77 s | hour 8 (4–13; 1/16) | hour 14 (7–25; 7/16) | hour 17 (5–25; 8/16) |
+| Art Gallery | Medium | 16/16, 164 s | 16/16, 40 s | hour 6 (4–9; 0/16) | hour 6.5 (5–23; 4/16) | hour 8 (6–9; 1/16) |
+| Dining Hall | Medium | 16/16, 144 s | 16/16, 51 s | hour 6 (5–11; 1/16) | hour 8 (5–14; 3/16) | hour 6 (4–10; 2/16) |
+| Königsberg | Hard | 16/16, 174 s | 16/16, 43 s | hour 5 (4–9; 0/16) | hour 6.5 (4–13; 3/16) | hour 7.5 (4–8; 1/16) |
+| Office | Hard | 15/16, 127 s | 11/16, 62 s | hour 4.5 (4–7; 0/16) | hour 4 (4–6; 1/16) | hour 5 (4–7; 0/16) |
 
-- **Dining Hall** is the easiest because twelve identical tables are twelve places to be wrong. A Gyro Jam on a near-lock lands Wobo on another table, typically 10 m away (12/12 locks broken in the study below), and Gyro Jam used whenever it is ready holds Wobo off for a median of 193 s.
-- **Barn** and **Art Gallery** are in the middle, within a few seconds of each other. The gallery's wings tell themselves apart by their furniture, and the guard gets in the way. The barn's twins are a long way off and each quarter has one tool left about in it, so a wrong guess is soon corrected (a Gyro Jam strays 0.4 m at worst). Road Block hurts most in the barn and the dining hall, which it doubles: both are rows of narrow gaps.
-- **Königsberg** is the slowest map to localize on unaided (open squares, few walls in reach) but recovers fastest from a kidnap: no two places on the river look alike.
-- **Office** is the hardest. The offices are identical, but the floor is small (643 cells against 1100–1800 on the others) and the pantry and lift lobby mark the ends of the hallway, so there is little room to hide. It also has the longest tail: a wrong office can take minutes to correct, and 2/16 runs never recover from a kidnap.
+Over all five maps the weak, medium and strong players reach a median of hour 6, 7 and 7; 60%, 49% and 66% of their runs end between hours 5 and 15, and 2%, 22% and 15% reach hour 25. Unaided, Wobo spends its slow first hours gathering evidence and finds itself in hour 3, at 127–174 s, on every map.
+
+- **The Barn** is the player's best map. Its half-turn symmetry gives a Gyro Jam or a Road Block a mirror twin to send Wobo's belief to (see the study below); half the strong player's runs there go the distance.
+- **Art Gallery and Dining Hall** are within noise of each other.
+- **Königsberg and the Office** are harder. Königsberg has no two places alike, so Wobo recovers fastest from a kidnap there. The Office floor is small (643 cells against 1100–1800 on the others) and the pantry and lift lobby mark the ends of its hallway, so there is little room to hide, though a wrong office can take minutes to correct (5/16 runs never recover from a kidnap).
+- **Skill buys less than it should.** Keeping everything running is close to the best play, so the strong player gains little on Medium except on the Barn; a first strong player that held energy back for Kidnap did worse than Medium.
+
+### Tuning the difficulty curve
+
+The scripted player of the time (one that reacted to the lock-on alarm and drafted the first card offered, close to today's Medium but less busy) was run with one factor changed at a time (16 seeds per map, median hour over all five maps; the original config reached hour 4, with 28% of runs over by hour 2 and 14% surviving to hour 25):
+
+| Factor | Change | Median hour | Notes |
+|---|---|---|---|
+| Particles in hour 1 | 10% / 30% of 2500 | 4 / 4 | Barely matters: injection re-seeds from the scan. Fewer runs end in hour 1–2 |
+| Localizer updates in hour 1 | 1 Hz / 2 Hz (of 4) | 7 / 5 | The strongest gentle-start lever: fewer early losses (12%) |
+| Calibration noise in hour 1 | none / doubled | 3 / 5 | |
+| Calibration fading | 15% a hour (from 40%) | 4 | |
+| Energy regen | 2 / 4.5 per s (from 3) | 2 / 7 | Very sensitive: 74% over by hour 2, or 29% to hour 25 |
+| Energy capacity | 150 (from 100) | 4 | |
+| Action costs | x0.7 / x1.4 | 7 / 2 | Very sensitive, like regen |
+| Action cooldowns | x0.6 / x1.5 | 4 / 2 | |
+
+No fixed factor makes the late game harder, because the player keeps drafting cards. Costs that grew each hour did it, but the player's side is meant to stay fixed, so the shipped curve makes Wobo's growth carry it:
+
+- **A slow, noisy start**: 20% of its compute at 0.5 Hz and doubled calibration noise, both fading by 20–30% a hour. This keeps early losses rare (0–2% of runs by hour 2).
+- **Compute that keeps growing past 100%**, to 300%. Extra particles stop paying off once there are enough; reading more beams per scan (`localizer.beam_stride`) is what lets a late Wobo see through interference. With the compute capped at 100%, the medium player reached hour 25 in 56% of runs; at 200% in 22%; at 400% in 11%, but then every profile ends by hour 5–6.
+- **Cooldowns that start when an effect ends.** Before, three Long Spin cards made Gyro Jam last 19 s on a 4 s cooldown, so it never stopped.
+
+Outcomes are bimodal: a run ends in hours 3–9, or the player's cards and energy outgrow Wobo and it never finds itself. Capping how many effects can run at once, or trimming how far upgrade and energy cards stack, both shrank that tail, but stacking effects is the heart of the game, so neither ships. Check changes with `wobo_bench --player weak|medium|strong --limit 1500`.
 
 ## Localization and planning
 
@@ -86,7 +120,7 @@ Wobo's brain is two swappable parts: a **localizer** turns odometry and scans in
 
 The **goal navigator** is what stops a confidently wrong Wobo from stalling. A greedy planner whose belief has collapsed onto the wrong office (or the mirror image of the right one) sees nothing worth doing, because all its hypotheses predict the same scans. The navigator finds the estimate's look-alikes ("twins") by matching precomputed 360° views under every rotation, then follows a grid path to the place where the estimate and its twins would see the most different things, such as the end of the Office hallway or the one corner of the barn with the tractor in it. If the belief is wrong, the scans on the way stop fitting and the localizer recovers. Before the navigator, on earlier maps, unaided Wobo localized in 3/20 runs on a symmetric office block; with it, 19/20.
 
-Benchmarks on every map (`wobo_bench`, 16 seeds). "Unaided" is runs localized within 300 s, summed over the five maps, plus the range of the maps' median times. "Office, Barn" is the unaided count on the two most symmetric maps. "Kidnap" is runs that were teleported halfway through locking on and then re-localized (a run that never got that close counts as not recovered). "Player" is the median hour the scripted saboteur reached on Dining Hall, Art Gallery, Barn, Königsberg and Office (8 seeds; 32 for the default; 1500 s limit = hour 25; the other pairings were measured before the Colour Blind rework). CPU is per simulated second, single-threaded on an Apple M5, measured with `info_gain`; the planner changes it little.
+Benchmarks on every map (`wobo_bench`, 16 seeds), measured before the difficulty curve above: 100% compute throughout, the earlier, milder calibration noise, cooldowns that started on use, and the scripted player of the time. Reproduce Wobo's side with `--set compute.share=1 --set compute.final_share=1 --set compute.update_hz=0` and the old `[calibration]` values (0.1, 24, 1.5, 0.6). "Unaided" is runs localized within 300 s, summed over the five maps, plus the range of the maps' median times. "Office, Barn" is the unaided count on the two most symmetric maps. "Kidnap" is runs that were teleported halfway through locking on and then re-localized (a run that never got that close counts as not recovered). "Player" is the median hour the scripted saboteur reached on Dining Hall, Art Gallery, Barn, Königsberg and Office (8 seeds; 32 for the default; 1500 s limit = hour 25; the other pairings were measured before the Colour Blind rework). CPU is per simulated second, single-threaded on an Apple M5, measured with `info_gain`; the planner changes it little.
 
 | Localizer + planner | Unaided (of 80) | Medians | Office, Barn | Kidnap recovered | Player reaches hour | CPU |
 |---|---|---|---|---|---|---|
@@ -105,20 +139,21 @@ What this shows:
 
 ## How each action hits the localizer
 
-`wobo_bench --study` gives the player every action for free and measures what each does to the default particle filter (12 seeds per map, 300 s limit). **Lock**: the moment Wobo is halfway to locking on to its true pose, the action is used once; the table gives how long until Wobo is found anyway (the median, "never" counting as 300 s) and how far its estimate strays in the next 20 s. **Spam**: the action is used whenever it is off cooldown from the start; the table gives the median time to localize on each map. Without interference a half-finished lock completes in 2 s.
+`wobo_bench --study` gives the player every action for free and measures what each does to the default particle filter at full strength: final compute (300%: 2500 particles reading every beam) and fully calibrated, as Wobo is late in a run (12 seeds per map, 300 s limit). **Lock**: the moment Wobo is halfway to locking on to its true pose, the action is used once; the table gives how long until Wobo is found anyway (the median) and how far its estimate strays in the next 20 s. **Spam**: the action is used whenever it is off cooldown from the start; the table gives the median time to localize on each map. Without interference a half-finished lock completes in 2 s.
 
-| Action | Lock: found again after | Lock: worst error | Spam: time to localize (Dining, Gallery, Barn, Königsberg, Office) | Verdict |
+| Action | Lock: found again after | Lock: worst error | Spam: time to localize (Barn, Gallery, Dining, Königsberg, Office) | Verdict |
 |---|---|---|---|---|
-| (none) | 2–4 s; the lock slips on its own in 23/60 runs | 0.2–0.3 m | 28, 37, 32, 44, 35 s | |
-| Smoke Bomb | 2–9 s | 0.2–0.3 m | 74, 57, 48, 71, 58 s | Prevention only: reliably slows the search, useless against a lock |
-| Gyro Jam | 16–24 s, lock lost in 50/60 | 0.4 m (Barn, Office), 2.5 m (Königsberg), 6 m (Gallery), 10 m (Dining) | 193, 74, 133, 213, 112 s; only 35/60 runs localize at all | The strongest lock breaker short of Kidnap. A heading error turns the whole belief, and where there are look-alikes (twelve tables, five wings) Wobo lands on one |
-| Gummy Wheels | 7–18 s, lock lost in 45/60 | 0.3–0.7 m | 92, 59, 58, 66, 45 s | A softer, local version: stalls a lock without throwing Wobo far |
-| Colour Blind | 2–19 s, lock lost in 30/60 | 0.2–0.3 m; 11 m in the Barn | 95, 62, 243, 61, 51 s; only 51/60 runs localize at all (5/12 in the Barn) | Blind ahead, Wobo drives into views it can't check, and swapped colours make a mirror twin fit better than the truth. Strongest in the symmetric Barn |
-| Colour Blind + Repainting Works (25%) | as Colour Blind | as Colour Blind | 81, 107, 206, 78, 51 s | Helps where shape-alike places differ in colour: the Art Gallery's wings (62 → 107 s), Königsberg (61 → 78 s). The Office's offices match in colour too, so it never fires there |
-| Road Block | 6–24 s, lock lost in 49/60 | 0.2–0.5 m | 63, 42, 61, 47, 30 s | Delays a lock without misleading it. Sustained use doubles the search where it closes a narrow gap (Dining Hall, Barn) |
-| Kidnap | 16–27 s, lock always lost | 13–19 m | (first use comes before Wobo has a lock) | Strongest by far, as its price says |
+| (none) | 2–4 s; the lock slips on its own in 22/60 runs | 0.1 m | 29, 28, 46, 41, 37 s | |
+| Smoke Bomb | 2 s | 0.1 m | 28, 19, 29, 21, 32 s | No effect late: reading only nearby walls, Wobo if anything localizes sooner. Its bite is early, against noisy sensors and little compute |
+| Gyro Jam | 12–16 s, lock lost in 48/60 | 0.2–0.6 m; 11 m in the Barn | 36, 34, 37, 36, 19 s | Still the surest lock breaker short of Kidnap, and in the Barn it sends the belief to the mirror twin. Alone it no longer holds a late Wobo off: reading every beam, it re-anchors its heading within seconds |
+| Gummy Wheels | 2–4 s | 0.2 m | 31, 30, 34, 32, 28 s (11/12 in the Office) | Mostly piles onto early noise |
+| Colour Blind | 2–6 s | 0.2 m | 34, 35, 36, 22, 26 s | A small delay |
+| Road Block | 6–13 s, lock lost in 38/60 | 7–9 m in the Barn and Königsberg, 0.1–0.3 m elsewhere | 80, 32, 51, 54, 32 s (11/12 in the Office) | The best to repeat late. A wall that is not on Wobo's map is evidence its software cannot explain away, and where it blocks the way Wobo takes itself for somewhere else |
+| Kidnap | 9–15 s, 67 s in the Office; lock always lost | 14–19 m | (first use comes before Wobo has a lock) | Strongest by far, as its price says |
 
-Colour Blind used to wash colours out and add noise. That only hid colour, and since nearby guesses all lose the same amount it never moved Wobo's belief: 32–43 s, against 28–44 s with no action. A clean swap misleads instead, and the blind spot turns it from a colour trick into a real handicap.
+At final compute, no action used on its own holds Wobo off for long: used whenever ready, each still lets it localize within 19–80 s. What carries a late run is stacking them, which is also why runs that last tend to last forever (see the difficulty curve above). Against hour-1 noise, used whenever ready, Smoke Bomb held Wobo off for 48–74 s and Gummy Wheels for 45–92 s. Repainting Works was measured at 100% compute: no gain on Colour Blind against a full-strength Wobo, but against hour-1 Wobo it lifted the Art Gallery from 62 to 107 s.
+
+Colour Blind used to wash colours out and add noise. That only hid colour, and since nearby guesses all lose the same amount it never moved Wobo's belief (32–43 s against hour-1 Wobo, 28–44 s with no action). A clean swap misleads instead, and the blind spot turns it from a colour trick into a real handicap.
 
 Map suitability: the share of visible wall faces that are clearly coloured is 0.27 (Office) to 1.00 (Barn, all red barn walls), above `action.colour.min_colour_share` (0.1) everywhere, so Colour Blind is drawn on every map; Road Block fits somewhere on every map; and Repainting Works needs places with a same-shape look-alike at least 3 m away that differs in colour on 4 of 32 directions, which 39% (Office) to 80% (Art Gallery) of places have, above `action.repaint.min_twin_share` (0.1). The checks still run for any new map.
 
@@ -150,7 +185,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ./build/wobo_bench --seeds 8              # every map
 ./build/wobo_bench --map barn --kidnap
-./build/wobo_bench --player --limit 1500  # with a scripted saboteur
+./build/wobo_bench --player strong --limit 1500  # with a scripted saboteur: weak, medium (default) or strong
 ./build/wobo_bench --localizer histogram_filter --planner landmark_tour
 ./build/wobo_bench --map office --seed 3 --seeds 1 --trace   # follow one run
 ./build/wobo_bench --study [--only colour,none]   # what each action does to the localizer

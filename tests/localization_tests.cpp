@@ -114,6 +114,34 @@ TEST("localizer: uniform prior is not localized at the start") {
     CHECK(diag->particles.size() > 100);
 }
 
+TEST("compute: Wobo's particle budget and update rate grow hour by hour") {
+    Config cfg = load_game_config();
+    cfg.set("localizer.particles", "2000");
+    cfg.set("compute.share", "0.25");
+    cfg.set("compute.final_share", "1");
+    cfg.set("compute.update_hz", "1");
+    cfg.set("compute.hourly_factor", "0.5");
+    cfg.set("run.hour_length", "10");
+    cfg.set("referee.stability", "100000");  // keep the run going
+    RunDirector run(cfg);
+    REQUIRE(run.start("barn", 2));
+    CHECK(std::fabs(run.compute_share() - 0.25f) < 1e-4f);
+    CHECK(std::fabs(run.compute_update_hz() - 1.0f) < 1e-4f);
+    for (int i = 0; i < 30 * 8; ++i) run.step();
+    REQUIRE(run.agent().diagnostics() != nullptr);
+    CHECK(run.agent().diagnostics()->particles.size() == 500);
+    // Hour 2: half the gap to the full budget is left.
+    while (run.score().hour < 2) {
+        if (run.phase() == RunPhase::Drafting) run.skip_draft();
+        run.step();
+    }
+    if (run.phase() == RunPhase::Drafting) run.skip_draft();
+    for (int i = 0; i < 30 * 2; ++i) run.step();
+    CHECK(std::fabs(run.compute_share() - 0.625f) < 1e-4f);
+    CHECK(std::fabs(run.compute_update_hz() - 2.5f) < 1e-4f);
+    CHECK(run.agent().diagnostics()->particles.size() == 1250);
+}
+
 TEST("planner: works from a point estimate without diagnostics") {
     const Config cfg = load_game_config();
     auto map = load_map("barn");

@@ -131,6 +131,11 @@ public:
     // shrinking each hour as it "calibrates". 0 means fully calibrated.
     float calibration_noise() const;
     double hour_length_s() const { return hour_length_s_; }
+    // Wobo's compute this hour ([compute] in game.cfg): the share of its
+    // localizer's full budget, and its updates per second (0: every scan).
+    // Both grow towards full as its computer warms up, hour by hour.
+    float compute_share() const;
+    float compute_update_hz() const;
 
 private:
     void push(GameEvent e) { events_.push_back(std::move(e)); }
@@ -143,6 +148,7 @@ private:
     // Repainting Works: roll its chance on a Colour Blind use, and if it
     // comes up and somewhere else is Wobo's shape, repaint.
     void maybe_repaint();
+    void apply_compute_budget();
 
     Config config_;
     SimConfig sim_config_;

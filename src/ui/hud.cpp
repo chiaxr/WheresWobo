@@ -247,9 +247,16 @@ void draw_hud(const HudLayout& l, const RunDirector& run, const HudState& st) {
         DrawCircleV({r.x + 5.0f * s, top + 10.0f * s}, 5.0f * s, mood_colour(mood));
         std::string title = std::string("Wobo is ") + mood_name(mood);
         text(title.c_str(), r.x + 17.0f * s, top, 18.0f * s, kInk, Weight::Bold);
+        // What it is up to, then, quietly, how much compute it has this hour.
+        char cores[48];
+        std::snprintf(cores, sizeof(cores), "  -  compute cores running at %.0f%%", 100.0f * run.compute_share());
+        const float fs = 13.0f * s;
+        const float cores_w = measure(cores, fs);
         const std::string reason = "\"" + agent.plan().reason + "\"";
-        const auto lines = wrap(reason, 13.0f * s, r.width);
-        if (!lines.empty()) text(lines[0].c_str(), r.x, top + 25.0f * s, 13.0f * s, kMuted);
+        const auto lines = wrap(reason, fs, std::max(0.0f, r.width - cores_w));
+        const std::string said = lines.empty() ? "" : lines[0];
+        text(said.c_str(), r.x, top + 25.0f * s, fs, kMuted);
+        text(cores, r.x + measure(said.c_str(), fs), top + 25.0f * s, fs, Color{kMuted.r, kMuted.g, kMuted.b, 150});
 
         const Rectangle c = l.confidence;
         const float ctop = c.y + c.height * 0.5f - 21.0f * s;

@@ -51,7 +51,7 @@ void ParticleFilter::reset(const Map2D& known_map, const InitialBelief& prior, s
     map_ = &known_map;
     prior_ = prior;
     rng_.reseed(seed);
-    const int n = config_.particles;
+    const int n = static_cast<int>(target_particles());
     diag_ = LocalizationDiagnostics{};
     diag_.particles.resize(static_cast<std::size_t>(n));
     for (auto& p : diag_.particles) {
@@ -63,6 +63,23 @@ void ParticleFilter::reset(const Map2D& known_map, const InitialBelief& prior, s
     w_slow_ = w_fast_ = 0.0f;
     beam_offset_ = 0;
     update_estimate();
+}
+
+void ParticleFilter::set_budget(float share) { budget_ = clampf(share, 0.0f, 4.0f); }
+
+int ParticleFilter::inject_candidates() const {
+    return std::max(1, static_cast<int>(std::lround(config_.inject_candidates * budget_)));
+}
+
+// Up to the configured budget, compute goes on particles; beyond it, on
+// reading more of each scan. Injection tries more poses throughout.
+std::size_t ParticleFilter::target_particles() const {
+    const float share = std::min(budget_, 1.0f);
+    return static_cast<std::size_t>(std::max(50, static_cast<int>(std::lround(config_.particles * share))));
+}
+
+int ParticleFilter::beam_stride() const {
+    return std::max(1, static_cast<int>(std::lround(config_.beam_stride / std::max(budget_, 1.0f))));
 }
 
 void ParticleFilter::predict(const OdometryDelta& odom) {
@@ -120,11 +137,12 @@ void ParticleFilter::observe(const RgbLidarScan& scan) {
     // contributes over successive scans.
     beams_.clear();
     const int n_returns = static_cast<int>(scan.returns.size());
-    for (int i = beam_offset_ % config_.beam_stride; i < n_returns; i += config_.beam_stride) {
+    const int stride = beam_stride();
+    for (int i = beam_offset_ % stride; i < n_returns; i += stride) {
         const LidarReturn& r = scan.returns[i];
         beams_.push_back({r.angle_rad, r.range_m, r.hit, r.rgb});
     }
-    beam_offset_ = (beam_offset_ + 1) % config_.beam_stride;
+    beam_offset_ = (beam_offset_ + 1) % stride;
     if (beams_.empty()) return;
     max_range_ = scan.max_range_m;
 
@@ -171,14 +189,17 @@ void ParticleFilter::observe(const RgbLidarScan& scan) {
     diag_.effective_sample_size = (1.0f / sum_sq) / static_cast<float>(n);
 
     diag_.injected_fraction = 0.0f;
-    if (diag_.effective_sample_size < config_.resample_ess || inject > 0.005f) {
+    if (diag_.effective_sample_size < config_.resample_ess || inject > 0.005f ||
+        diag_.particles.size() != target_particles()) {
         resample(inject);
     }
     update_estimate();
 }
 
 void ParticleFilter::resample(float inject_fraction) {
-    const std::size_t n = diag_.particles.size();
+    // Draws from the current set; produces the budget's worth of particles.
+    const std::size_t old_n = diag_.particles.size();
+    const std::size_t n = target_particles();
     scratch_.resize(n);
     const auto n_inject = static_cast<std::size_t>(inject_fraction * static_cast<float>(n));
     const std::size_t n_keep = n - n_inject;
@@ -189,7 +210,7 @@ void ParticleFilter::resample(float inject_fraction) {
     float c = diag_.particles[0].weight;
     std::size_t j = 0;
     for (std::size_t i = 0; i < n_keep; ++i) {
-        while (u > c && j + 1 < n) c += diag_.particles[++j].weight;
+        while (u > c && j + 1 < old_n) c += diag_.particles[++j].weight;
         Pose2D p = diag_.particles[j].pose;
         p.x += rng_.normal(0.0f, config_.jitter_m);
         p.z += rng_.normal(0.0f, config_.jitter_m);
@@ -201,8 +222,9 @@ void ParticleFilter::resample(float inject_fraction) {
     // poses (sensor-resetting), so recovery lands near places that look right.
     for (std::size_t i = n_keep; i < n; ++i) {
         Pose2D best = map_->sample_valid_pose(rng_, config_.robot_radius);
-        float best_ll = config_.inject_candidates > 1 ? log_likelihood(best) : 0.0f;
-        for (int k = 1; k < config_.inject_candidates; ++k) {
+        const int candidates = inject_candidates();
+        float best_ll = candidates > 1 ? log_likelihood(best) : 0.0f;
+        for (int k = 1; k < candidates; ++k) {
             const Pose2D p = map_->sample_valid_pose(rng_, config_.robot_radius);
             const float ll = log_likelihood(p);
             if (ll > best_ll) {
@@ -215,6 +237,7 @@ void ParticleFilter::resample(float inject_fraction) {
     const float w = 1.0f / static_cast<float>(n);
     for (auto& p : scratch_) p.weight = w;
     diag_.particles.swap(scratch_);
+    log_lik_.resize(n);
     diag_.injected_fraction = inject_fraction;
 }
 

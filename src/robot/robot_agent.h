@@ -51,6 +51,9 @@ public:
     void reset(const Map2D& known_map, const InitialBelief& prior, std::uint64_t seed);
 
     MotionCommand update(const AgentInput& input);
+    // How much compute Wobo has: the localizer's share of its full budget,
+    // and how often per second it runs (0: on every scan).
+    void set_budget(float share, float update_hz);
 
     PoseEstimate estimate() const { return localizer_->estimate(); }
     const LocalizationDiagnostics* diagnostics() const { return localizer_->diagnostics(); }
@@ -76,6 +79,8 @@ private:
     const Map2D* map_ = nullptr;
 
     OdometryDelta pending_odometry_;     // since the last localizer update
+    float update_interval_s_ = 0.0f;     // 0: every scan
+    double last_update_s_ = -1e9;
     Pose2D odom_pose_;                   // dead reckoning, odometry frame
     std::optional<RgbLidarScan> last_scan_;
     bool blind_ = false;

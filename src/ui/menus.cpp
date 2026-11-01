@@ -209,8 +209,9 @@ void draw_help(const HelpLayout& l, float s, int w, int h, Vector2 mouse) {
          kInk},
         {"Hours and cards",
          "The clock runs one hour at a time. On each hour, draft a card: new abilities, "
-         "upgrades, more energy, or passive tricks. Wobo's sensors also recalibrate on the hour, so they are "
-         "noisiest in hour 1 and sharpen every hour after.",
+         "upgrades, more energy, or passive tricks. Wobo gets sharper on the hour too: its sensors are "
+         "noisiest in hour 1 and recalibrate, its computer warms up so it thinks faster and weighs more "
+         "guesses.",
          kInk},
         {"Controls",
          "1-6 or click: use an action. Kidnap and Road Block: click a spot, drag to aim. Space: pause. [ ]: speed. "

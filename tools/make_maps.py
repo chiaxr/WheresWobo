@@ -150,7 +150,7 @@ maps.append(m)
 m = Map("gallery", 60, 34, "Art Gallery",
         "Five wings off one long hall, each hung and furnished its own way, and a guard post at every mouth. "
         "Colour is what tells the wings apart.",
-        3, "Medium", fill="#")
+        2, "Medium", fill="#")
 c = m.c
 WINGS = [  # x0, x1, top z
     (2, 9, 3), (13, 22, 8), (26, 32, 2), (36, 47, 6), (51, 58, 11),
@@ -240,7 +240,7 @@ maps.append(m)
 m = Map("dining", 46, 34, "Dining Hall",
         "Twelve round tables, all laid alike: five plates of spaghetti and five forks. "
         "The kitchen, the fireplace and the high table are all Wobo has to go on.",
-        1, "Easy")
+        3, "Medium")
 c = m.c
 m.material("K", "brick", name="Brick", rgb="170, 84, 62", solid=True, height=0.9, pattern="grid")
 # Kitchen along the north, behind a wall with a door and a serving counter.
@@ -274,7 +274,7 @@ maps.append(m)
 m = Map("barn", 46, 30, "Barn",
         "Mirror-image stalls round a wide aisle, hay stacked alike at every corner, and a donkey "
         "that cannot decide. Only the tools left about tell one end from the other.",
-        2, "Medium")
+        1, "Medium")
 c = m.c
 m.material("W", "barn_wall", name="Barn wall", rgb="160, 70, 56", solid=True, height=0.9, pattern="stripes")
 m.material("w", "stall", name="Stall", rgb="168, 128, 84", solid=True, height=0.55)

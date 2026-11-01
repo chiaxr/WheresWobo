@@ -119,9 +119,12 @@ void PlayerActionSystem::trigger_free(ActionId id, float duration, const RunStat
 }
 
 void PlayerActionSystem::step(float dt_s) {
+    // The cooldown runs once the effect is over, so no effect, however
+    // lengthened by cards, can be kept up without a break.
     for (ActionState& s : states_) {
-        s.cooldown_left = std::max(0.0f, s.cooldown_left - dt_s);
+        const float idle = std::max(0.0f, dt_s - s.active_left);
         s.active_left = std::max(0.0f, s.active_left - dt_s);
+        s.cooldown_left = std::max(0.0f, s.cooldown_left - idle);
     }
 }
 

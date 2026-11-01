@@ -40,6 +40,7 @@ void RobotAgent::reset(const Map2D& known_map, const InitialBelief& prior, std::
     localizer_->reset(known_map, prior, derive_seed(seed, "localizer"));
     planner_->reset(derive_seed(seed, "planner"));
     pending_odometry_ = {};
+    last_update_s_ = -1e9;
     odom_pose_ = {};
     last_scan_.reset();
     blind_ = false;
@@ -72,6 +73,11 @@ RelativeMotion RobotAgent::remaining_motion() const {
     }
 }
 
+void RobotAgent::set_budget(float share, float update_hz) {
+    localizer_->set_budget(share);
+    update_interval_s_ = update_hz > 0.0f ? 1.0f / update_hz : 0.0f;
+}
+
 MotionCommand RobotAgent::update(const AgentInput& in) {
     if (in.time_s < config_.boot_s) {
         mood_ = RobotMood::Thinking;
@@ -84,11 +90,17 @@ MotionCommand RobotAgent::update(const AgentInput& in) {
     driven_ += in.odometry.forward_m;
 
     if (in.scan) {
-        localizer_->predict(pending_odometry_);
-        pending_odometry_ = {};
+        // With less compute, the localizer skips some scans (odometry keeps
+        // adding up meanwhile); the planner and the safety stop see them all.
+        const bool think = update_interval_s_ <= 0.0f || in.time_s - last_update_s_ >= update_interval_s_ - 1e-6;
+        if (think) {
+            localizer_->predict(pending_odometry_);
+            pending_odometry_ = {};
+            last_update_s_ = in.time_s;
+        }
         blind_ = !in.scan->valid;
         if (in.scan->valid) {
-            localizer_->observe(*in.scan);
+            if (think) localizer_->observe(*in.scan);
             last_scan_ = *in.scan;
 
             // Reactive safety: something right in front while driving.
@@ -104,7 +116,7 @@ MotionCommand RobotAgent::update(const AgentInput& in) {
 
             // Observations stopped fitting: stop and spin round for a full look.
             const PoseEstimate est = localizer_->estimate();
-            if (est.consistency < config_.confusion_threshold &&
+            if (think && est.consistency < config_.confusion_threshold &&
                 in.time_s - last_spin_s_ > config_.confusion_cooldown_s) {
                 last_spin_s_ = in.time_s;
                 confused_until_s_ = in.time_s + 4.0;
