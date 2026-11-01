@@ -105,6 +105,7 @@ bool RunDirector::start(const std::string& map_id, std::uint64_t seed, std::stri
     survived_ = false;
     hour_time_s_ = 0.0;
     hour_ = 1;
+    overloaded_ = false;
     apply_compute_budget();
     kidnaps_ = 0;
     last_close_calls_ = 0;
@@ -127,6 +128,12 @@ void RunDirector::step() {
 
     actions_.step(dt);
     if (block_ && !actions_.active(ActionId::Block)) clear_block();
+    // Overload caps Wobo's compute while it lasts; its software is not told
+    // why it has less.
+    if (actions_.active(ActionId::Overload) != overloaded_) {
+        overloaded_ = !overloaded_;
+        apply_compute_budget();
+    }
     const float regen_mult =
         1.0f + (actions_.active_count() > 0
                     ? stats_.get("passive.overclock") * stats_.get("passive.overclock_bonus", 0.5f)
@@ -219,16 +226,20 @@ float RunDirector::compute_share() const {
     const float gap = std::pow(clampf(config_.get_float("compute.hourly_factor", 1.0f), 0.0f, 1.0f),
                                static_cast<float>(hour_ - 1));
     const float last = std::max(0.05f, config_.get_float("compute.final_share", 1.0f));
-    return last - (last - clampf(config_.get_float("compute.share", 1.0f), 0.0f, last)) * gap;
+    const float share = last - (last - clampf(config_.get_float("compute.share", 1.0f), 0.0f, last)) * gap;
+    return overloaded_ ? std::min(share, std::max(0.0f, stats_.get("action.overload.share", 0.1f))) : share;
 }
 
 float RunDirector::compute_update_hz() const {
     const float full = std::max(0.1f, config_.get_float("sensor.scan_hz", 4.0f));
     const float first = config_.get_float("compute.update_hz", 0.0f);
-    if (first <= 0.0f || first >= full) return 0.0f;
-    const float gap = std::pow(clampf(config_.get_float("compute.hourly_factor", 1.0f), 0.0f, 1.0f),
-                               static_cast<float>(hour_ - 1));
-    const float hz = full - (full - first) * gap;
+    float hz = full;
+    if (first > 0.0f && first < full) {
+        const float gap = std::pow(clampf(config_.get_float("compute.hourly_factor", 1.0f), 0.0f, 1.0f),
+                                   static_cast<float>(hour_ - 1));
+        hz = full - (full - first) * gap;
+    }
+    if (overloaded_) hz = std::min(hz, std::max(0.05f, stats_.get("action.overload.update_hz", 0.25f)));
     return hz >= full - 0.05f ? 0.0f : hz;
 }
 

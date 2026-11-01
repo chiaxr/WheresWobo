@@ -9,7 +9,7 @@ You've kidnapped Wobo. Now it's fully-recharged and ready to find out where it i
 
 | Input | Action |
 |---|---|
-| `1`-`6` / click | Use an action (Kidnap, Road Block: click a spot, drag to aim or turn) |
+| `1`-`7` / click | Use an action (Kidnap, Road Block: click a spot, drag to aim or turn) |
 | `Space` / `P` | Pause |
 | `[` `]` | Simulation speed 1x / 2x (also the play and fast-forward buttons under the hour clock) |
 | Drag, right-drag | Pan |
@@ -39,9 +39,10 @@ The results screen shows how long you lasted, e.g. "Lost until Hour 3, 42 min", 
 | Gummy Wheels | Card | Bubblegum on the wheels: Wobo really slows to half speed, and its wheels slip, so it overestimates how far it went (and the distance noise grows). Heading stays true |
 | Colour Blind | Card | Red-green sunglasses: the LiDAR's colours are swapped round, and the shades are so dark Wobo is blind straight ahead (beams within 90° of its heading return nothing). Only offered on maps with colourful walls. Its Repainting Works upgrade gives each use a 25% chance (per stack) of calling the painters: for that use, the surfaces round Wobo read in the colours of a place elsewhere that is the same shape, so Wobo's scans fit there instead |
 | Road Block | Card | A 1.5 m barricade you place (drag to turn it) for 12 s. It is physically there, so the LiDAR sees it and Wobo bumps into it, but it is not on Wobo's map. It may not cut any floor off from the rest, or land on Wobo. Only offered on maps where it fits somewhere |
+| Overload | Card | A power surge fries Wobo's onboard computer for 4 s. Its localizer is capped at 10% of its compute (250 particles, so it forgets most of the places it was weighing up) and reads a scan only once every 4 s, so its estimate goes stale while it drives. Its sensors are untouched |
 | Kidnap | Card | A crane carries Wobo to a spot you pick (at least 2 m away). Wobo's software is told nothing |
 
-Cards add the last four abilities, and upgrade any owned ability's duration, strength, cost or cooldown. An ability's cooldown starts when its effect wears off, so however long its upgrades make it, no effect can be kept up for good.
+Cards add the last five abilities, and upgrade any owned ability's duration, strength, cost or cooldown. An ability's cooldown starts when its effect wears off, so however long its upgrades make it, no effect can be kept up for good.
 
 ## Maps
 
@@ -59,28 +60,28 @@ Props (tables, sculptures, hay bales, houses) are part of Wobo's map and are tes
 
 ### Difficulty
 
-Measured with `wobo_bench` and the shipped `game.cfg` (16 seeds per map). "Unaided" has no player: runs localized within 300 s and the median time. "Kidnap" is how often, and how quickly, Wobo re-localizes after being teleported halfway through locking on. The three player columns are scripted saboteurs (`--player weak|medium|strong`): the median hour reached, the middle half of the hours ("end" for the end of the day), and how many runs kept Wobo lost all 24 hours.
+Measured with `wobo_bench` and the shipped `game.cfg` (16 seeds per map unaided, 32 with a player). "Unaided" has no player: runs localized within 300 s and the median time. "Kidnap" is how often, and how quickly, Wobo re-localizes after being teleported halfway through locking on. The three player columns are scripted saboteurs (`--player weak|medium|strong`): the median hour reached, the middle half of the hours ("end" for the end of the day), and how many runs kept Wobo lost all 24 hours.
 
 - **Weak** drafts at random and, about every other second, presses any ability that is ready, Kidnap included, whatever Wobo is doing.
 - **Medium** keeps every ability it can afford running all the time and saves Kidnap, to a random spot, for the lock-on alarm.
-- **Strong** plays like Medium but drafts by a priority list (Kidnap and its upgrades, Gyro Jam, energy), favours the stronger effects and Kidnaps Wobo to the spot farthest from its guess.
+- **Strong** plays like Medium but drafts by a priority list (Kidnap and its upgrades, Gyro Jam, Overload, energy), favours the stronger effects, Kidnaps Wobo to the spot farthest from its guess, and saves Overload for a lock-on alarm that Kidnap can't answer.
 
 | Map | For the player | Unaided | Kidnap: recovered, median | Weak | Medium | Strong |
 |---|---|---|---|---|---|---|
-| Barn | Medium | 16/16, 159 s | 16/16, 74 s | hour 8 (4–13; 1/16) | hour 14 (7–end; 7/16) | hour 20.5 (5.5–end; 7/16) |
-| Art Gallery | Medium | 16/16, 158 s | 16/16, 61 s | hour 6 (4–9; 0/16) | hour 6 (4–23; 4/16) | hour 8 (6–10; 1/16) |
-| Dining Hall | Medium | 16/16, 154 s | 16/16, 51 s | hour 7.5 (5–12; 1/16) | hour 6 (4–11; 2/16) | hour 5.5 (5–10.5; 2/16) |
-| Königsberg | Hard | 16/16, 147 s | 16/16, 70 s | hour 5 (4–8.5; 0/16) | hour 5 (4–8; 0/16) | hour 5 (4–8; 0/16) |
-| Office | Hard | 13/16, 158 s | 9/16, 61 s | hour 5 (4–8; 0/16) | hour 6.5 (4–24; 4/16) | hour 5.5 (4–9.5; 0/16) |
+| Barn | Medium | 16/16, 159 s | 16/16, 74 s | hour 7 (4.5–15.5; 4/32) | hour 7.5 (5–22; 8/32) | hour 9 (5–end; 13/32) |
+| Art Gallery | Medium | 16/16, 158 s | 16/16, 61 s | hour 6 (5–9; 2/32) | hour 6 (4–10; 5/32) | hour 8 (5–24; 8/32) |
+| Dining Hall | Medium | 16/16, 154 s | 16/16, 51 s | hour 6.5 (5–11; 1/32) | hour 6 (5–9; 2/32) | hour 6 (5–9; 5/32) |
+| Königsberg | Hard | 16/16, 147 s | 16/16, 70 s | hour 5 (4–6; 1/32) | hour 5 (4–6; 2/32) | hour 7 (5–10; 5/32) |
+| Office | Hard | 13/16, 158 s | 9/16, 61 s | hour 7 (4–13; 4/32) | hour 7 (4–23; 8/32) | hour 6 (5–11; 4/32) |
 
-Over all five maps the weak, medium and strong players reach a median of hour 6, 7 and 7; 65%, 52% and 66% of their runs end between hours 5 and 15, and 2%, 21% and 12% keep Wobo lost all day. Unaided, Wobo spends its slow first hours gathering evidence and finds itself in hour 3, at 147–159 s, on every map.
+Over all five maps the weak, medium and strong players reach a median of hour 6, 6 and 7; 61%, 60% and 59% of their runs end between hours 5 and 15, and 8%, 16% and 22% keep Wobo lost all day. Unaided, Wobo spends its slow first hours gathering evidence and finds itself in hour 3, at 147–159 s, on every map.
 
 Wobo never starts within 1 m of a place that nothing else on the map looks like by shape (`run.start_unique_radius`), such as the dead ends of the Office hallway. From there it had a confident, correct guess in a median of 67 s, against 165 s from anywhere else in the Office (64 seeds, unaided). The rule rules out about half the Office's floor and 9–42% of the other maps'; with it, unaided Wobo takes 185 s rather than 134 s to find itself in the Office, and the others barely change.
 
-- **The Barn** is the player's best map. Its half-turn symmetry gives a Gyro Jam or a Road Block a mirror twin to send Wobo's belief to (see the study below); half the strong player's runs there go the distance.
+- **The Barn** is the player's best map. Its half-turn symmetry gives a Gyro Jam or a Road Block a mirror twin to send Wobo's belief to (see the study below); 13 of the strong player's 32 runs there go the distance.
 - **Art Gallery and Dining Hall** are within noise of each other.
 - **Königsberg and the Office** are harder. Königsberg has no two places alike, so every start is soon told apart. The Office floor is small (643 cells against 1100–1800 on the others) and the pantry and lift lobby mark the ends of its hallway, so there is little room to hide, though a wrong office can take minutes to correct (7/16 runs never recover from a kidnap within 300 s).
-- **Skill buys less than it should.** Keeping everything running is close to the best play, so the strong player gains little on Medium except on the Barn; a first strong player that held energy back for Kidnap did worse than Medium.
+- **Skill buys less than it should.** Keeping everything running is close to the best play; a first strong player that held energy back for Kidnap did worse than Medium. Overload is the one ability that rewards timing: saved for the lock-on alarm, it lifts the strong player's whole-day wins from 15% to 22% (32 seeds per map, with and without the card in the draft), mostly on the Art Gallery, Dining Hall and Königsberg, while the weak and medium players, who fire it whenever it is ready, barely change (7% to 8%, 14% to 16%).
 
 ### Tuning the difficulty curve
 
@@ -151,6 +152,7 @@ What this shows:
 | Gummy Wheels | 2–4 s | 0.2 m | 31, 30, 34, 32, 28 s (11/12 in the Office) | Mostly piles onto early noise |
 | Colour Blind | 2–6 s | 0.2 m | 34, 35, 36, 22, 26 s | A small delay |
 | Road Block | 6–13 s, lock lost in 38/60 | 7–9 m in the Barn and Königsberg, 0.1–0.3 m elsewhere | 80, 32, 51, 54, 32 s (11/12 in the Office) | The best to repeat late. A wall that is not on Wobo's map is evidence its software cannot explain away, and where it blocks the way Wobo takes itself for somewhere else |
+| Overload | 9–11 s, lock lost in 78/80 | 0.7–1.1 m | 52, 34, 39, 49, 58 s (16 seeds; none: 29, 27, 40, 29, 63 s) | The cheap lock breaker. Reading a scan once in 4 s, Wobo's estimate trails it as it drives, so a lock almost never survives, but Wobo is back on it seconds after the power returns. Cut to 100 particles instead of 250, it handed Wobo a fresh start: used whenever ready it then sped Wobo up in the Office (62 to 37 s) |
 | Kidnap | 9–15 s, 67 s in the Office; lock always lost | 14–19 m | (first use comes before Wobo has a lock) | Strongest by far, as its price says |
 
 At final compute, no action used on its own holds Wobo off for long: used whenever ready, each still lets it localize within 19–80 s. What carries a late run is stacking them, which is also why runs that last tend to last forever (see the difficulty curve above). Against hour-1 noise, used whenever ready, Smoke Bomb held Wobo off for 48–74 s and Gummy Wheels for 45–92 s. Repainting Works was measured at 100% compute: no gain on Colour Blind against a full-strength Wobo, but against hour-1 Wobo it lifted the Art Gallery from 62 to 107 s.
@@ -229,7 +231,7 @@ tests/, tools/      unit tests, headless benchmark, map generator
 ```
 
 - **Replacing the localizer or planner:** implement `ILocalizer` / `IActivePlanner`, add an entry to `localizer_registry.cpp` / `planner_registry.cpp`, and select it with `localizer.type` / `planner.type` in `game.cfg` (or `wobo_bench --localizer NAME`). Diagnostics such as particles are optional; the planner and UI fall back to a point estimate.
-- **Player actions** only change `SensorModifiers` (the measurement paths). The exceptions change the physical world and tell the robot nothing: Kidnap moves the true pose, Gummy Wheels slows the wheels, Road Block puts a barrier only in the physical world.
+- **Player actions** only change `SensorModifiers` (the measurement paths). The exceptions tell the robot nothing: Kidnap moves the true pose, Gummy Wheels slows the wheels, Road Block puts a barrier only in the physical world, and Overload caps the compute budget `RunDirector` gives Wobo's localizer, the channel its hourly warm-up uses.
 - **Maps** are a folder each, `data/maps/<id>/map.txt`: a grid of materials, props placed off the grid (`kind x z key=value`, with exact circle and box footprints), and movers. The format is documented in `src/world/map_loader.h`. Movers exist only in the physical world, never in the map Wobo localizes against.
 - **Data** (`data/`) is embedded at build time by `cmake/EmbedFiles.cmake`, so desktop and web read identical bytes. Editing a map, card or config triggers a rebuild.
 
@@ -262,7 +264,7 @@ tests/, tools/      unit tests, headless benchmark, map generator
    - whether it is aimed at a spot on the map;
    - whether it is instant.
 2. **Tune it** in a `[action.<key>]` section of `data/configs/game.cfg`: `cost`, `duration`, `cooldown` and `owned` (1 for the starting kit), plus its own parameters. Read them through `RunStats` (`stats.get("action.<key>.name", default)`) so cards can change them.
-3. **Make it act on a measurement path.** Add its effect to `PlayerActionSystem::modifiers` as a change to `SensorModifiers`. If no existing field fits, add one and apply it in `src/simulation/lidar.cpp` or `odometry.cpp`. Wobo's software must never be told: an effect on the physical world (as with Kidnap, Gummy Wheels' slow-down or Road Block) goes through `RunDirector` and stays out of the robot's messages.
+3. **Make it act on a measurement path.** Add its effect to `PlayerActionSystem::modifiers` as a change to `SensorModifiers`. If no existing field fits, add one and apply it in `src/simulation/lidar.cpp` or `odometry.cpp`. Wobo's software must never be told: an effect on the physical world (as with Kidnap, Gummy Wheels' slow-down or Road Block) goes through `RunDirector` and stays out of the robot's messages, and so does one on its computer (Overload's cap in `RunDirector::compute_share`).
 4. **Put it in the draft.** In `data/cards/cards.cfg`, add an ability card (`effect = grant <key>`) and upgrade cards (`requires = <key>`, `effect = stat action.<key>.duration *1.5`, ...). An action that only works on some maps gets a `needs` trait, checked in `RunDirector::suits_map`.
 5. **Give it a face.**
    - A button colour in `src/ui/widgets.h`, used by the `switch` blocks in `ui/hud.cpp` and `app/game_app.cpp`.

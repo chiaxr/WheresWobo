@@ -72,6 +72,7 @@ TEST("actions: each action changes only its own data path") {
     RunStats stats = base_stats();
     stats.set("action.colour.owned", 1.0f);
     stats.set("action.gummy.owned", 1.0f);
+    stats.set("action.overload.owned", 1.0f);
     stats.set("energy.capacity", 10000.0f);
     stats.set("energy.start", 10000.0f);
     EnergySystem energy;
@@ -125,6 +126,40 @@ TEST("actions: each action changes only its own data path") {
     CHECK(colour.colour_hue_shift > 0.0f);
     CHECK(colour.blind_cone_rad > 0.0f);  // and blind straight ahead
     CHECK(colour.repaint.empty());        // only with the Repainting Works upgrade
+
+    // Overload touches no sensor at all: it caps Wobo's compute (see below).
+    const SensorModifiers overload = run_one(ActionId::Overload);
+    CHECK(odom_untouched(overload));
+    CHECK(lidar_untouched(overload));
+}
+
+TEST("overload: caps Wobo's compute while it lasts, then gives it back") {
+    Config cfg = load_game_config();
+    cfg.set("action.overload.owned", "1");
+    cfg.set("energy.start", "100");
+    RunDirector run(cfg);
+    REQUIRE(run.start("barn", 1));
+    const float share = run.compute_share();
+    const float hz = run.compute_update_hz();
+    const float cap = cfg.get_float("action.overload.share", 0.1f);
+    REQUIRE(share > cap);
+    const auto* diag = run.agent().diagnostics();
+    REQUIRE(diag != nullptr);
+    for (int i = 0; i < 150; ++i) run.step();  // past boot, a few updates
+    const std::size_t before = diag->particles.size();
+
+    REQUIRE(run.activate(ActionId::Overload) == ActivateResult::Ok);
+    for (int i = 0; i < 90; ++i) run.step();
+    CHECK_NEAR(run.compute_share(), cap, 1e-6);
+    CHECK(run.compute_update_hz() > 0.0f);
+    CHECK(run.compute_update_hz() <= cfg.get_float("action.overload.update_hz", 0.25f) + 1e-6f);
+    CHECK(diag->particles.size() < before);
+
+    const float duration = cfg.get_float("action.overload.duration", 6.0f);
+    for (int i = 0; i < static_cast<int>(duration / run.step_s()); ++i) run.step();
+    CHECK(!run.actions().active(ActionId::Overload));
+    CHECK_NEAR(run.compute_share(), share, 1e-6);
+    CHECK_NEAR(run.compute_update_hz(), hz, 1e-6);
 }
 
 TEST("referee: thresholds and stability window") {

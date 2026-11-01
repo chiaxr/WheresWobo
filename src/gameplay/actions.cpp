@@ -23,6 +23,10 @@ const ActionInfo kActions[kActionCount] = {
      "Drop a barrier that isn't on Wobo's map. Its scans stop matching, and its route is cut. Every spot "
      "must stay reachable.",
      true, false},
+    {ActionId::Overload, "overload", "Overload", "Onboard computer",
+     "A power surge fries Wobo's circuits: for a while it thinks slowly, on a fraction of its compute, and "
+     "forgets most of the places it was weighing up.",
+     false, false},
 };
 
 std::string stat_key(ActionId id, const char* field) {

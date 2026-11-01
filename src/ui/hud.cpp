@@ -21,6 +21,7 @@ Color action_colour(ActionId id) {
         case ActionId::Colour: return kBelief;
         case ActionId::Gummy: return kGummy;
         case ActionId::Block: return kRoadBlock;
+        case ActionId::Overload: return kOverload;
         case ActionId::Count: break;
     }
     return kInk;

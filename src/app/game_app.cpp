@@ -34,6 +34,7 @@ Color event_colour(ActionId id) {
         case ActionId::Kidnap: return ui::kDanger;
         case ActionId::Gummy: return ui::kGummy;
         case ActionId::Block: return ui::kRoadBlock;
+        case ActionId::Overload: return ui::kOverload;
         default: return ui::kInk;
     }
 }
@@ -770,6 +771,8 @@ Face GameApp::face_for(const RunDirector& run) const {
     if (run.phase() == RunPhase::Over) return run.score().survived ? Face::Confused : Face::Confident;
     if (crane_.active() && crane_.frame().carrying) return Face::Surprised;
     if (time_ < dizzy_until_ || run.actions().active(ActionId::Drift)) return Face::Dizzy;
+    // Overloaded: its screen glitches between a blank stare and crossed-out eyes.
+    if (run.actions().active(ActionId::Overload)) return std::fmod(time_, 0.6f) < 0.15f ? Face::Blind : Face::Thinking;
     switch (run.agent().mood()) {
         case RobotMood::Curious: return Face::Curious;
         case RobotMood::Thinking: return Face::Thinking;
@@ -787,7 +790,7 @@ void GameApp::draw_world(const RunDirector& run, float alpha, bool overlays) {
     const RobotAgent& agent = run.agent();
 
     // How Wobo looks right now: carried by the crane, spun by Gyro Jam,
-    // wearing Colour Blind's shades, gum on its wheels.
+    // wearing Colour Blind's shades, gum on its wheels, smoking from Overload.
     WoboStyle look;
     const bool craning = crane_.active() && &run == run_.get();
     if (craning) {
@@ -801,6 +804,7 @@ void GameApp::draw_world(const RunDirector& run, float alpha, bool overlays) {
     const float spin = 3.0f * kTwoPi * (1.0f - std::pow(1.0f - spin_k, 3.0f));
     look.sunglasses = run.actions().active(ActionId::Colour);
     look.gummy = run.actions().active(ActionId::Gummy);
+    look.sparking = run.actions().active(ActionId::Overload);
     look.dizzy_stars = run.actions().active(ActionId::Drift) || time_ < dizzy_until_;
 
     BeginMode3D(camera_.camera());

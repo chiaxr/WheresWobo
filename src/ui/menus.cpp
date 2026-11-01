@@ -192,7 +192,7 @@ const Section kHelpSections[] = {
      "guesses.",
      kInk},
     {"Controls",
-     "1-6 or click: use an action. Kidnap and Road Block: click a spot, drag to aim. Space: pause. [ ]: speed. "
+     "1-7 or click: use an action. Kidnap and Road Block: click a spot, drag to aim. Space: pause. [ ]: speed. "
      "Drag or right-drag: pan. Wheel or pinch: zoom. B: show beliefs (also in the menu). V: scan lines. Tab: top-down "
      "view. F: centre on Wobo.",
      kMuted},

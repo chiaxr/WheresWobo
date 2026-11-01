@@ -6,7 +6,8 @@
 // slows Wobo down), the LiDAR (Colour Blind: its colours, and dead ahead;
 // with the Repainting Works upgrade, sometimes the colours of a look-alike
 // place instead -- see RunDirector), the world itself (Road Block:
-// an obstacle that is not on Wobo's map) or -- Kidnap --
+// an obstacle that is not on Wobo's map), its onboard computer (Overload:
+// a cap on the compute budget, applied by RunDirector) or -- Kidnap --
 // the robot's true physical pose. Parameters come from RunStats, so cards
 // can change them mid-run. Internal keys ("range", "drift", ...) name the
 // data path, and stay stable while display names change.
@@ -23,7 +24,7 @@
 
 namespace wobo {
 
-enum class ActionId : int { Range, Drift, Kidnap, Colour, Gummy, Block, Count };
+enum class ActionId : int { Range, Drift, Kidnap, Colour, Gummy, Block, Overload, Count };
 inline constexpr int kActionCount = static_cast<int>(ActionId::Count);
 
 struct ActionInfo {

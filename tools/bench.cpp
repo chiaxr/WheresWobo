@@ -20,7 +20,7 @@
 // "Spam": the action is used whenever it is off cooldown from the start;
 // how many runs Wobo still localizes in, and how long it takes.
 // --only limits it to some actions, by key (none, range, drift, kidnap,
-// colour, gummy, block, ...).
+// colour, gummy, block, overload, ...).
 
 #include <algorithm>
 #include <chrono>
@@ -105,7 +105,7 @@ bool block_ahead(RunDirector& run) {
 
 // An ordinary player, who keeps something running all the time: any action
 // that is ready and affordable, in a fixed order (Gyro Jam, Smoke Bomb,
-// Gummy Wheels, Colour Blind, a Road Block across Wobo's way), whether or not
+// Gummy Wheels, Colour Blind, Overload, a Road Block across Wobo's way), whether or not
 // Wobo is anywhere near the truth. Saves Kidnap, to a random spot, for the
 // lock-on alarm (a lock held for a second). Drafts the first card offered.
 void medium_step(RunDirector& run, Rng& rng) {
@@ -114,7 +114,7 @@ void medium_step(RunDirector& run, Rng& rng) {
         return;
     }
     if (lock_alarm(run) && run.can_activate(ActionId::Kidnap) == ActivateResult::Ok && kidnap_anywhere(run, rng)) return;
-    for (ActionId id : {ActionId::Drift, ActionId::Range, ActionId::Gummy, ActionId::Colour}) {
+    for (ActionId id : {ActionId::Drift, ActionId::Range, ActionId::Gummy, ActionId::Colour, ActionId::Overload}) {
         if (!run.actions().active(id) && run.activate(id) == ActivateResult::Ok) return;
     }
     block_ahead(run);
@@ -145,12 +145,14 @@ void weak_step(RunDirector& run, Rng& rng, double& next_look_s) {
 
 // An expert: plays like the ordinary player (holding energy back measured
 // worse than spending it), but drafts by a fixed priority (Kidnap and what
-// feeds it, then Gyro Jam, energy, and the rest, as --study ranks them),
-// favours the stronger effects, and Kidnaps to the spot farthest from where
-// Wobo thinks it is.
+// feeds it, then Gyro Jam, Overload, energy, and the rest, as --study ranks
+// them), favours the stronger effects, Kidnaps to the spot farthest from
+// where Wobo thinks it is, and saves Overload for a lock-on alarm that Kidnap
+// can't answer.
 void strong_step(RunDirector& run, Rng& rng) {
     static const char* const kPriority[] = {
-        "kidnap", "spare_kidnap", "kidnap_cool", "kidnap_cheap", "drift_long", "aftershock", "battery",
+        "kidnap", "spare_kidnap", "kidnap_cool", "kidnap_cheap", "drift_long", "aftershock", "overload",
+        "overload_cool", "overload_long", "battery",
         "capacitor", "solar", "overclock", "vertigo", "drift_strong", "gummy", "gummy_sticky", "block",
         "block_long", "brinkmanship", "chain_reaction", "power_surge", "cold_snap", "colour", "repaint",
         "colour_long", "range_cheap", "range_long", "range_deep", "static_cling"};
@@ -182,6 +184,7 @@ void strong_step(RunDirector& run, Rng& rng) {
         }
         if (far && run.activate(ActionId::Kidnap, *far) == ActivateResult::Ok) return;
     }
+    if (lock_alarm(run) && run.activate(ActionId::Overload) == ActivateResult::Ok) return;
     for (ActionId id : {ActionId::Drift, ActionId::Gummy, ActionId::Colour, ActionId::Range}) {
         if (!run.actions().active(id) && run.activate(id) == ActivateResult::Ok) return;
     }
@@ -357,7 +360,7 @@ void run_study(const Config& base, const std::vector<std::string>& maps, int fir
                const std::string& only) {
     const Config cfg = study_config(base);
     const ActionId ids[] = {kNoAction, ActionId::Range, ActionId::Drift, ActionId::Gummy,
-                            ActionId::Colour, ActionId::Block, ActionId::Kidnap};
+                            ActionId::Colour, ActionId::Block, ActionId::Overload, ActionId::Kidnap};
     std::printf("%-12s %-13s | %6s %7s %8s %9s | %7s %8s\n", "map", "action", "used", "broke", "refind", "peak err",
                 "spam ok", "median");
     for (const std::string& map : maps) {

@@ -127,6 +127,36 @@ void RobotModel::draw(const ToonShader& shader, Vec2 position, float heading, Fa
         }
         shader.set_flat(false);
     }
+    if (style.sparking) {
+        // Puffs of smoke that rise from its head, swell and drift off, and a
+        // spark that jumps about over it now and then.
+        shader.set_flat(true);
+        const float top = 0.5f + bob_ + style.lift;
+        for (int i = 0; i < 3; ++i) {
+            const float k = std::fmod(time_ * 0.8f + i / 3.0f, 1.0f);
+            const Vector3 c{position.x - 0.04f + 0.2f * k + 0.03f * std::sin(time_ * 2.0f + i * 2.1f),
+                            top + 0.42f * k, position.z - 0.12f * k + 0.03f * std::cos(time_ * 1.7f + i * 1.3f)};
+            const float r = 0.03f + 0.05f * k;
+            const Color smoke = prim::mix(Color{168, 170, 186, 255}, Color{226, 228, 238, 255}, k);
+            rlDrawRenderBatchActive();
+            rlSetCullFace(RL_CULL_FACE_FRONT);
+            prim::sphere(c, r + 0.012f, prim::with_alpha(kOutline, style.alpha), 6, 10);
+            rlDrawRenderBatchActive();
+            rlSetCullFace(RL_CULL_FACE_BACK);
+            prim::sphere(c, r, prim::with_alpha(smoke, style.alpha), 6, 10);
+        }
+        if (std::fmod(time_, 0.45f) < 0.12f) {
+            const float a = std::floor(time_ / 0.45f) * 2.4f;
+            rlPushMatrix();
+            rlTranslatef(position.x + std::cos(a) * 0.13f, top + 0.02f, position.z + std::sin(a) * 0.13f);
+            rlRotatef(a * kRadToDeg, 0, 1, 0);
+            rlRotatef(45.0f, 1, 0, 0);
+            prim::box({0, 0, 0}, {0.012f, 0.09f, 0.012f}, prim::with_alpha(Color{255, 240, 140, 255}, style.alpha));
+            prim::box({0, 0, 0}, {0.012f, 0.012f, 0.09f}, prim::with_alpha(Color{255, 240, 140, 255}, style.alpha));
+            rlPopMatrix();
+        }
+        shader.set_flat(false);
+    }
 }
 
 void RobotModel::draw_sunglasses(const WoboStyle& style) const {

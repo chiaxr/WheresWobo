@@ -135,9 +135,10 @@ public:
     // Hours in the day ([run] hours): a run still going at the end of the
     // last one is the player's win. 0: the day never ends.
     int day_hours() const { return day_hours_; }
-    // Wobo's compute this hour ([compute] in game.cfg): the share of its
+    // Wobo's compute right now ([compute] in game.cfg): the share of its
     // localizer's full budget, and its updates per second (0: every scan).
-    // Both grow towards full as its computer warms up, hour by hour.
+    // Both grow towards full as its computer warms up, hour by hour, and
+    // drop to Overload's caps ([action.overload]) while it lasts.
     float compute_share() const;
     float compute_update_hz() const;
 
@@ -190,6 +191,7 @@ private:
     double hour_length_s_ = 40.0;
     double hour_time_s_ = 0.0;
     int hour_ = 1;
+    bool overloaded_ = false;  // the compute budget last applied had Overload's caps
     int day_hours_ = 0;
     bool survived_ = false;
     int kidnaps_ = 0;

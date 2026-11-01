@@ -185,6 +185,39 @@ void road_block(Vector2 c, float u, float line) {
     blob({c.x, c.y - 0.58f * u}, 0.17f * u, Color{255, 196, 60, 255}, line);
 }
 
+void overload_chip(Vector2 c, float u, float line, float t) {
+    // A computer chip with a lightning bolt across it, smoking.
+    const Color smoke{206, 208, 220, 255};
+    blob({c.x + 0.66f * u, c.y - 0.7f * u}, 0.2f * u, smoke, line);
+    blob({c.x + 0.42f * u, c.y - 0.9f * u}, 0.15f * u, smoke, line);
+    const Color pin{170, 176, 196, 255};
+    for (int i = -1; i <= 1; ++i) {
+        const float o = i * 0.32f * u;
+        for (float side : {-1.0f, 1.0f}) {
+            DrawLineEx({c.x + side * 0.6f * u, c.y + o}, {c.x + side * 0.9f * u, c.y + o}, 0.1f * u + 2 * line, kOutline);
+            DrawLineEx({c.x + side * 0.6f * u, c.y + o}, {c.x + side * 0.88f * u, c.y + o}, 0.1f * u, pin);
+            DrawLineEx({c.x + o, c.y + side * 0.6f * u}, {c.x + o, c.y + side * 0.9f * u}, 0.1f * u + 2 * line, kOutline);
+            DrawLineEx({c.x + o, c.y + side * 0.6f * u}, {c.x + o, c.y + side * 0.88f * u}, 0.1f * u, pin);
+        }
+    }
+    rounded({c.x - 0.66f * u, c.y - 0.66f * u, 1.32f * u, 1.32f * u}, 0.2f, Color{56, 60, 86, 255}, line);
+    DrawRectangleRoundedLinesEx({c.x - 0.48f * u, c.y - 0.48f * u, 0.96f * u, 0.96f * u}, 0.2f, 6, line,
+                                Color{90, 96, 128, 255});
+    // The bolt: a thick zigzag with an outline under it.
+    const Vector2 bolt[] = {{c.x + 0.22f * u, c.y - 0.78f * u},
+                            {c.x - 0.16f * u, c.y + 0.02f * u},
+                            {c.x + 0.16f * u, c.y - 0.02f * u},
+                            {c.x - 0.22f * u, c.y + 0.78f * u}};
+    for (int pass = 0; pass < 2; ++pass) {
+        const float w = pass == 0 ? 0.2f * u + 2 * line : 0.2f * u;
+        const Color col = pass == 0 ? kOutline : kEnergy;
+        for (int i = 0; i < 3; ++i) DrawLineEx(bolt[i], bolt[i + 1], w, col);
+        for (int i = 1; i < 3; ++i) DrawCircleV(bolt[i], w * 0.5f, col);
+    }
+    const float flicker = 0.8f + 0.2f * std::sin(t * 23.0f);
+    spark({c.x - 0.72f * u, c.y - 0.72f * u}, 0.2f * u * flicker, kEnergy);
+}
+
 }  // namespace
 
 void action_icon(ActionId id, Vector2 centre, float size, float time_s) {
@@ -197,6 +230,7 @@ void action_icon(ActionId id, Vector2 centre, float size, float time_s) {
         case ActionId::Colour: colour_blind(centre, u, line); break;
         case ActionId::Gummy: gummy_wheel(centre, u, line); break;
         case ActionId::Block: road_block(centre, u, line); break;
+        case ActionId::Overload: overload_chip(centre, u, line, time_s); break;
         case ActionId::Count: break;
     }
 }
