@@ -138,7 +138,7 @@ TEST("referee: thresholds and stability window") {
 TEST("cards: same seed and picks reproduce the same drafts") {
     const auto drafts = [](std::uint64_t seed) {
         Config cfg = load_game_config();
-        cfg.set("run.day_length", "5");
+        cfg.set("run.hour_length", "5");
         RunDirector run(cfg);
         run.start("offices", seed);
         std::vector<std::string> seen;
@@ -159,7 +159,7 @@ TEST("cards: same seed and picks reproduce the same drafts") {
 
 TEST("cards: drafting pauses the simulation and energy") {
     Config cfg = load_game_config();
-    cfg.set("run.day_length", "5");
+    cfg.set("run.hour_length", "5");
     RunDirector run(cfg);
     REQUIRE(run.start("offices", 3));
     for (int i = 0; i < 30 * 10 && run.phase() == RunPhase::Playing; ++i) run.step();
@@ -177,7 +177,7 @@ TEST("cards: drafting pauses the simulation and energy") {
 
 TEST("cards: offers are distinct and basic actions stay owned") {
     Config cfg = load_game_config();
-    cfg.set("run.day_length", "5");
+    cfg.set("run.hour_length", "5");
     RunDirector run(cfg);
     REQUIRE(run.start("offices", 12));
     int drafts = 0;

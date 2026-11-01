@@ -3,7 +3,7 @@
 // how long it takes to recover from a kidnapping (--kidnap: teleported as soon
 // as it is halfway to locking on), and the CPU cost per simulated second.
 // --player adds a simple scripted saboteur (see bot_step) so balance changes
-// can be judged by how many days a reasonable player survives.
+// can be judged by how many hours a reasonable player survives.
 // Used both to validate the robotics and to balance the game.
 //
 //   wobo_bench [--map ID|all] [--seeds N] [--seed FIRST] [--limit S] [--kidnap] [--player]
@@ -33,7 +33,7 @@ namespace {
 struct Result {
     double time_s = -1.0;           // to localization (or to the kidnap, with --kidnap)
     double recovery_s = -1.0;       // kidnap to re-localization
-    int days = 1;                   // day reached
+    int hours = 1;                  // hour reached
     double ms_per_sim_s = 0.0;
     float final_pos_err = 0.0f;
     float final_head_err = 0.0f;
@@ -111,7 +111,7 @@ Result run_one(const Config& cfg, const std::string& map, std::uint64_t seed, do
             else run.skip_draft();
         }
     }
-    r.days = run.score().day;
+    r.hours = run.score().hour;
     if (run.phase() == RunPhase::Over) {
         if (kidnapped) r.recovery_s = run.sim().time_s() - kidnap_time;
         else r.time_s = run.sim().time_s();
@@ -177,12 +177,12 @@ int main(int argc, char** argv) {
     }
 
     if (csv) std::printf("map,seed,time_s,recovery_s,ms_per_sim_s,pos_err,head_err\n");
-    else std::printf("%-12s %8s %8s %8s %9s %6s %10s\n", "map", "success", "median", "mean", "recovery", "day", "ms/sim-s");
+    else std::printf("%-12s %8s %8s %8s %9s %6s %10s\n", "map", "success", "median", "mean", "recovery", "hour", "ms/sim-s");
 
     for (const std::string& map : maps) {
         std::vector<double> times;
         std::vector<double> recoveries;
-        std::vector<double> days;
+        std::vector<double> hours;
         double ms = 0.0;
         int ok = 0;
         for (int s = first_seed; s < first_seed + seeds; ++s) {
@@ -192,7 +192,7 @@ int main(int argc, char** argv) {
             // "success": localized, or with --kidnap, recovered from the kidnap.
             if (kidnap ? r.recovery_s >= 0.0 : r.time_s >= 0.0) ++ok;
             if (r.recovery_s >= 0.0) recoveries.push_back(r.recovery_s);
-            days.push_back(r.days);
+            hours.push_back(r.hours);
             if (csv) {
                 std::printf("%s,%d,%.2f,%.2f,%.3f,%.3f,%.2f\n", map.c_str(), s, r.time_s, r.recovery_s,
                             r.ms_per_sim_s, r.final_pos_err, r.final_head_err);
@@ -203,7 +203,7 @@ int main(int argc, char** argv) {
             for (double t : times) mean += t;
             mean = times.empty() ? -1.0 : mean / static_cast<double>(times.size());
             std::printf("%-12s %5d/%-2d %8.1f %8.1f %9.1f %6.0f %10.2f\n", map.c_str(), ok, seeds, median(times), mean,
-                        median(recoveries), median(days), ms / seeds);
+                        median(recoveries), median(hours), ms / seeds);
         }
     }
     return 0;

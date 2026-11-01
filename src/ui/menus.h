@@ -57,14 +57,14 @@ struct GameOverLayout {
     Rectangle menu{};
 };
 GameOverLayout layout_game_over(int w, int h, float s);
-void draw_game_over(const GameOverLayout& l, float s, int w, int h, const RunScore& score, double day_length_s,
+void draw_game_over(const GameOverLayout& l, float s, int w, int h, const RunScore& score, double hour_length_s,
                     const std::string& map_name, const std::string& best, bool new_best, Vector2 mouse,
                     float time_s);
 
 std::string format_time(double seconds);
-// The in-game clock: each day runs midnight to midnight. `day_progress` is 0..1.
-std::string time_of_day(float day_progress);
-// "Day 3, 14:30" for a total survival time.
-std::string survival_text(double seconds, double day_length_s);
+// The in-game clock: minutes into the hour. `hour_progress` is 0..1.
+std::string time_of_hour(float hour_progress);
+// "Hour 3, 42 min" for a total survival time.
+std::string survival_text(double seconds, double hour_length_s);
 
 }  // namespace wobo::ui

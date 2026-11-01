@@ -16,18 +16,16 @@ std::string format_time(double seconds) {
     return buf;
 }
 
-std::string time_of_day(float day_progress) {
-    const int minutes = static_cast<int>(std::clamp(day_progress, 0.0f, 0.9999f) * 24.0f * 60.0f);
-    char buf[16];
-    std::snprintf(buf, sizeof(buf), "%02d:%02d", minutes / 60, minutes % 60);
-    return buf;
+std::string time_of_hour(float hour_progress) {
+    const int minutes = static_cast<int>(std::clamp(hour_progress, 0.0f, 0.9999f) * 60.0f);
+    return std::to_string(minutes) + " min";
 }
 
-std::string survival_text(double seconds, double day_length_s) {
-    if (day_length_s <= 0.0) return format_time(seconds);
-    const int day = static_cast<int>(seconds / day_length_s) + 1;
-    const double into = seconds - (day - 1) * day_length_s;
-    return "Day " + std::to_string(day) + ", " + time_of_day(static_cast<float>(into / day_length_s));
+std::string survival_text(double seconds, double hour_length_s) {
+    if (hour_length_s <= 0.0) return format_time(seconds);
+    const int hour = static_cast<int>(seconds / hour_length_s) + 1;
+    const double into = seconds - (hour - 1) * hour_length_s;
+    return "Hour " + std::to_string(hour) + ", " + time_of_hour(static_cast<float>(into / hour_length_s));
 }
 
 namespace {
@@ -191,7 +189,7 @@ void draw_help(const HelpLayout& l, float s, int w, int h, Vector2 mouse) {
     const Section sections[] = {
         {"The goal",
          "Wobo has been switched on somewhere in a map it knows, but not where. It moves around and scans "
-         "to work out its position. You can't steer it - but you can sabotage it. Survive as many days as "
+         "to work out its position. You can't steer it - but you can sabotage it. Survive as many hours as "
          "possible before Wobo correctly finds itself.",
          kInk},
         {"Reading the view",
@@ -208,10 +206,10 @@ void draw_help(const HelpLayout& l, float s, int w, int h, Vector2 mouse) {
          "that scramble the colours it sees. Kidnap (from a card): a crane drops Wobo somewhere else without "
          "telling its software. Time them for when Wobo is about to see something telling.",
          kInk},
-        {"Days and cards",
-         "The clock runs one day from midnight to midnight. At each midnight, draft a card: new abilities, "
-         "upgrades, more energy, or passive tricks. Overnight Wobo's sensors also recalibrate, so they are "
-         "noisiest on day 1 and sharpen every day after.",
+        {"Hours and cards",
+         "The clock runs one hour at a time. On each hour, draft a card: new abilities, "
+         "upgrades, more energy, or passive tricks. Wobo's sensors also recalibrate on the hour, so they are "
+         "noisiest in hour 1 and sharpen every hour after.",
          kInk},
         {"Controls",
          "1-4 or click: use an action. Kidnap: click a spot, drag to aim. Space: pause. [ ]: speed. "
@@ -240,7 +238,7 @@ GameOverLayout layout_game_over(int w, int h, float s) {
     return l;
 }
 
-void draw_game_over(const GameOverLayout& l, float s, int w, int h, const RunScore& score, double day_length_s,
+void draw_game_over(const GameOverLayout& l, float s, int w, int h, const RunScore& score, double hour_length_s,
                     const std::string& map_name, const std::string& best, bool new_best, Vector2 mouse,
                     float time_s) {
     dim(w, h, 140);
@@ -252,7 +250,7 @@ void draw_game_over(const GameOverLayout& l, float s, int w, int h, const RunSco
     text_centered(map_name.c_str(), cx, y, 16.0f * s, kMuted, Weight::Bold);
     y += 30.0f * s;
 
-    const std::string line = "Lost until " + survival_text(score.survival_s, day_length_s);
+    const std::string line = "Lost until " + survival_text(score.survival_s, hour_length_s);
     text_centered(line.c_str(), cx, y, 26.0f * s, kInk, Weight::Bold);
     y += 40.0f * s;
 

@@ -103,11 +103,11 @@ void GameApp::load_progress() {
     std::istringstream in(load_save_text());
     std::string line;
     while (std::getline(in, line)) {
-        // best.<map>=<seconds>,<day>
+        // best.<map>=<seconds>,<hour>
         const auto eq = line.find('=');
         if (line.rfind("best.", 0) != 0 || eq == std::string::npos) continue;
         Best b;
-        if (std::sscanf(line.c_str() + eq + 1, "%lf,%d", &b.seconds, &b.day) == 2) {
+        if (std::sscanf(line.c_str() + eq + 1, "%lf,%d", &b.seconds, &b.hour) == 2) {
             best_[line.substr(5, eq - 5)] = b;
         }
     }
@@ -115,20 +115,20 @@ void GameApp::load_progress() {
 
 void GameApp::save_progress() {
     std::ostringstream out;
-    for (const auto& [map, b] : best_) out << "best." << map << "=" << b.seconds << "," << b.day << "\n";
+    for (const auto& [map, b] : best_) out << "best." << map << "=" << b.seconds << "," << b.hour << "\n";
     store_save_text(out.str());
 }
 
 std::string GameApp::best_text(const std::string& map_id) const {
     const auto it = best_.find(map_id);
     if (it == best_.end()) return "No best yet - how long can you last?";
-    return "Best: lost until " + ui::survival_text(it->second.seconds, config_.get_float("run.day_length", 120.0f));
+    return "Best: lost until " + ui::survival_text(it->second.seconds, config_.get_float("run.hour_length", 120.0f));
 }
 
 std::string GameApp::best_short(const std::string& map_id) const {
     const auto it = best_.find(map_id);
     if (it == best_.end()) return "Not played yet";
-    return "Best: " + ui::survival_text(it->second.seconds, config_.get_float("run.day_length", 120.0f));
+    return "Best: " + ui::survival_text(it->second.seconds, config_.get_float("run.hour_length", 120.0f));
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +183,7 @@ void GameApp::start_run() {
     spin_start_ = dizzy_until_ = -100.0f;
     fx_.clear();
     bind_map(*run_);
-    toast("Day 1. Keep Wobo lost!", ui::kEnergy);
+    toast("Hour 1. Keep Wobo lost!", ui::kEnergy);
 }
 
 void GameApp::bind_map(const RunDirector& run) {
@@ -282,7 +282,7 @@ void GameApp::handle_events(RunDirector& run, bool is_player_run) {
                 if (e.action == ActionId::Drift) spin_start_ = time_;
                 if (e.action != ActionId::Kidnap) fx_.float_text(at, e.text, event_colour(e.action));
                 break;
-            case GameEvent::Type::DayEnded:
+            case GameEvent::Type::HourEnded:
                 if (is_player_run) toast(e.text + " - pick a card!", ui::kGood);
                 break;
             case GameEvent::Type::CardChosen:
@@ -535,7 +535,7 @@ void GameApp::update_playing(float dt, const PointerFrame& in) {
         new_best_ = sc.survival_s > b.seconds && profile_.seconds <= 0.0f;  // profiling plays no real runs
         if (new_best_) {
             b.seconds = sc.survival_s;
-            b.day = sc.day;
+            b.hour = sc.hour;
             save_progress();
         }
     }
@@ -960,13 +960,13 @@ void GameApp::draw() {
                 }
                 if (run_->phase() == RunPhase::Drafting) {
                     const ui::CardLayout cl = ui::layout_cards(w, h, s, static_cast<int>(run_->offer().size()));
-                    ui::draw_cards(cl, s, w, h, run_->score().day - 1, run_->offer(), run_->cards(), mouse, time_);
+                    ui::draw_cards(cl, s, w, h, run_->score().hour - 1, run_->offer(), run_->cards(), mouse, time_);
                 }
                 if (menu_open_) ui::draw_pause(ui::layout_pause(w, h, s), s, w, h, show_belief_, mouse);
                 if (show_help_) ui::draw_help(ui::layout_help(w, h, s), s, w, h, mouse);
             } else if (over_t_ >= 1.2f) {
                 const std::string name = maps_[map_index_].name + "  -  seed " + std::to_string(run_->seed());
-                ui::draw_game_over(ui::layout_game_over(w, h, s), s, w, h, run_->score(), run_->day_length_s(), name,
+                ui::draw_game_over(ui::layout_game_over(w, h, s), s, w, h, run_->score(), run_->hour_length_s(), name,
                                    best_text(run_->map_id()), new_best_, mouse, time_);
             }
             break;

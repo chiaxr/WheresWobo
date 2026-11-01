@@ -1,6 +1,6 @@
 #pragma once
 
-// The in-run heads-up display. One slim bar along the top holds the day clock
+// The in-run heads-up display. One slim bar along the top holds the hour clock
 // and time, the pause / play / fast-forward buttons, Wobo's status (mood,
 // intent, its own confidence, and the referee's lock-on outline) and the
 // help and menu buttons; on narrow screens the status drops to a second row.
@@ -23,7 +23,7 @@ struct HudLayout {
     bool two_rows = false;      // status on a second row (narrow screens)
     Vector2 clock{};
     float clock_r = 0.0f;
-    Rectangle day_panel{};      // clock plus day and time; hovering it tells when the draft is
+    Rectangle hour_panel{};     // clock plus hour and time; hovering it tells when the draft is
     Rectangle transport{};      // the well holding the three time buttons
     Rectangle pause{};
     Rectangle play{};           // 1x

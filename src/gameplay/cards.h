@@ -25,7 +25,7 @@ struct CardDef {
     float weight = 1.0f;
     int max_stack = 1;
     std::string requires_action;  // action key that must be owned, or empty
-    int min_day = 1;
+    int min_hour = 1;
     std::vector<std::string> effects;
 };
 
@@ -40,7 +40,7 @@ public:
     // key is owned. Categories are spread out: once a category is offered,
     // further cards of it are much less likely in the same offer.
     template <typename OwnedFn>
-    std::vector<const CardDef*> draw(int count, int day, OwnedFn owned);
+    std::vector<const CardDef*> draw(int count, int hour, OwnedFn owned);
 
     void record_pick(const CardDef& card) { ++taken_[card.id]; }
     int taken(const std::string& id) const;
@@ -56,11 +56,11 @@ private:
 };
 
 template <typename OwnedFn>
-std::vector<const CardDef*> CardDraftSystem::draw(int count, int day, OwnedFn owned) {
+std::vector<const CardDef*> CardDraftSystem::draw(int count, int hour, OwnedFn owned) {
     std::vector<const CardDef*> eligible;
     for (const CardDef& c : cards_) {
         if (taken(c.id) >= c.max_stack) continue;
-        if (day < c.min_day) continue;
+        if (hour < c.min_hour) continue;
         if (!c.requires_action.empty() && !owned(c.requires_action)) continue;
         // An ability card is pointless once its action is owned.
         bool grants_owned = false;

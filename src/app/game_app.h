@@ -56,7 +56,7 @@ private:
 
     struct Best {
         double seconds = 0.0;
-        int day = 0;
+        int hour = 0;
     };
 
     float ui_scale() const;

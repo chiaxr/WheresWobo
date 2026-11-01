@@ -1,6 +1,6 @@
 #pragma once
 
-// The end-of-day draft: three cards, pick one.
+// The end-of-hour draft: three cards, pick one.
 
 #include <vector>
 
@@ -15,7 +15,7 @@ struct CardLayout {
 };
 
 CardLayout layout_cards(int w, int h, float s, int count);
-void draw_cards(const CardLayout& l, float s, int w, int h, int day_survived,
+void draw_cards(const CardLayout& l, float s, int w, int h, int hour_survived,
                 const std::vector<const CardDef*>& offer, const CardDraftSystem& draft, Vector2 mouse,
                 float time_s);
 

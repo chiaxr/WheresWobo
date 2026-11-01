@@ -59,9 +59,9 @@ bool RunDirector::start(const std::string& map_id, std::uint64_t seed, std::stri
     offer_.clear();
     picked_.clear();
     events_.clear();
-    day_length_s_ = std::max(5.0f, config_.get_float("run.day_length", 40.0f));
-    day_time_s_ = 0.0;
-    day_ = 1;
+    hour_length_s_ = std::max(5.0f, config_.get_float("run.hour_length", 40.0f));
+    hour_time_s_ = 0.0;
+    hour_ = 1;
     kidnaps_ = 0;
     last_close_calls_ = 0;
     last_spins_ = 0;
@@ -90,7 +90,7 @@ void RunDirector::step() {
     modifiers_ = actions_.modifiers(stats_);
 
     // Calibration: early on Wobo's sensors are noisier than their rating (and
-    // its localizer does not know it); each day they settle a little more.
+    // its localizer does not know it); each hour they settle a little more.
     const float k = calibration_noise();
     modifiers_.range_noise_add += k * config_.get_float("calibration.range_noise", 0.0f);
     modifiers_.colour_noise_add += k * config_.get_float("calibration.colour_noise", 0.0f);
@@ -119,17 +119,17 @@ void RunDirector::step() {
         push({GameEvent::Type::CloseCall, ActionId::Range, {}, {}, "Close call!"});
     }
 
-    day_time_s_ += sim_config_.step_s;
-    if (day_time_s_ >= day_length_s_) {
-        day_time_s_ = 0.0;
-        push({GameEvent::Type::DayEnded, ActionId::Range, {}, {}, "Day " + std::to_string(day_) + " survived"});
-        ++day_;
+    hour_time_s_ += sim_config_.step_s;
+    if (hour_time_s_ >= hour_length_s_) {
+        hour_time_s_ = 0.0;
+        push({GameEvent::Type::HourEnded, ActionId::Range, {}, {}, "Hour " + std::to_string(hour_) + " survived"});
+        ++hour_;
         begin_draft();
     }
 }
 
 void RunDirector::begin_draft() {
-    offer_ = cards_.draw(3, day_, [this](const std::string& key) {
+    offer_ = cards_.draw(3, hour_, [this](const std::string& key) {
         const auto id = action_from_key(key);
         return id && actions_.owned(*id, stats_);
     });
@@ -137,8 +137,8 @@ void RunDirector::begin_draft() {
 }
 
 float RunDirector::calibration_noise() const {
-    return std::pow(clampf(config_.get_float("calibration.daily_factor", 1.0f), 0.0f, 1.0f),
-                    static_cast<float>(day_ - 1));
+    return std::pow(clampf(config_.get_float("calibration.hourly_factor", 1.0f), 0.0f, 1.0f),
+                    static_cast<float>(hour_ - 1));
 }
 
 ActivateResult RunDirector::can_activate(ActionId id) const {
@@ -231,7 +231,7 @@ RunScore RunDirector::score() const {
     RunScore s;
     if (!sim_) return s;
     s.survival_s = sim_->time_s();
-    s.day = day_;
+    s.hour = hour_;
     s.actions_used = actions_.total_uses();
     s.kidnaps = kidnaps_;
     s.close_calls = referee_.close_calls();

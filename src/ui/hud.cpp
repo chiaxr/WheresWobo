@@ -35,12 +35,12 @@ Color mood_colour(RobotMood m) {
     }
 }
 
-// A 24-hour clock for the day: one full turn of the hand is one day, from
-// midnight at the top round to midnight again, where the card marks the
-// draft. The night half of the face is tinted, the elapsed part fills green,
+// A clock for the hour: one full turn of the hand is one hour, from the top
+// round to the top again, where the card marks the draft. The elapsed part
+// fills green,
 // and the last stretch turns yellow and pulses so a draft never arrives
 // unannounced.
-void day_clock(Vector2 c, float radius, float progress, float s, float time_s) {
+void hour_clock(Vector2 c, float radius, float progress, float s, float time_s) {
     progress = std::clamp(progress, 0.0f, 1.0f);
     const bool closing = progress > 0.85f;
     const float pulse = closing ? 1.0f + 0.06f * std::sin(time_s * 10.0f) : 1.0f;
@@ -48,8 +48,6 @@ void day_clock(Vector2 c, float radius, float progress, float s, float time_s) {
 
     DrawCircleV(c, r, kPanelEdge);
     DrawCircleV(c, r - 1.5f * s, kRaised);
-    // Night: 18:00 through midnight to 06:00 is the top half of the dial.
-    DrawCircleSector(c, r - 1.5f * s, 180.0f, 360.0f, 32, kSpot);
 
     // Elapsed wedge, from twelve o'clock clockwise.
     if (progress > 0.0f) {
@@ -58,7 +56,7 @@ void day_clock(Vector2 c, float radius, float progress, float s, float time_s) {
         DrawCircleSector(c, r - 3.5f * s, -90.0f, -90.0f + 360.0f * progress, 48, wedge);
     }
 
-    // Ticks: twelve, with the quarters longer.
+    // Ticks: every five minutes, with the quarters longer.
     for (int i = 1; i < 12; ++i) {
         const float a = (-90.0f + 30.0f * i) * DEG2RAD;
         const float len = (i % 3 == 0 ? 6.0f : 3.5f) * s;
@@ -125,12 +123,12 @@ HudLayout layout_hud(int w, int h, float s, const RunDirector& run) {
     l.bar = {m, m, w - 2.0f * m, row};
     const float cy = l.bar.y + row * 0.5f;
 
-    // Left: clock, day and time, then the time controls in a well.
+    // Left: clock, hour and time, then the time controls in a well.
     float x = l.bar.x + pad;
     l.clock_r = 26.0f * s;
     l.clock = {x + l.clock_r, cy};
-    l.day_panel = {x, l.bar.y + 6.0f * s, 2.0f * l.clock_r + 10.0f * s + 84.0f * s, row - 12.0f * s};
-    x += l.day_panel.width + g;
+    l.hour_panel = {x, l.bar.y + 6.0f * s, 2.0f * l.clock_r + 10.0f * s + 84.0f * s, row - 12.0f * s};
+    x += l.hour_panel.width + g;
     const float tw = 44.0f * s;
     const float tg = 3.0f * s;
     l.transport = {x, cy - 22.0f * s, 3.0f * tw + 4.0f * tg, 44.0f * s};
@@ -204,22 +202,22 @@ void draw_hud(const HudLayout& l, const RunDirector& run, const HudState& st) {
         DrawRectangleRec({l.bar.x + 14.0f * s, l.bar.y + 72.0f * s, l.bar.width - 28.0f * s, line}, kPanelEdge);
     }
 
-    // --- Day and time ---------------------------------------------------
+    // --- Hour and time ---------------------------------------------------
     {
-        day_clock(l.clock, l.clock_r, run.day_progress(), s, st.time_s);
+        hour_clock(l.clock, l.clock_r, run.hour_progress(), s, st.time_s);
         const float tx = l.clock.x + l.clock_r + 10.0f * s;
-        char day[32];
-        std::snprintf(day, sizeof(day), "DAY %d", score.day);
-        text(day, tx, l.clock.y - 22.0f * s, 20.0f * s, kInk, Weight::Bold);
-        const std::string t = time_of_day(run.day_progress());
+        char hour[32];
+        std::snprintf(hour, sizeof(hour), "HOUR %d", score.hour);
+        text(hour, tx, l.clock.y - 22.0f * s, 20.0f * s, kInk, Weight::Bold);
+        const std::string t = time_of_hour(run.hour_progress());
         text(t.c_str(), tx, l.clock.y + 2.0f * s, 17.0f * s, kEnergy, Weight::Bold);
 
-        if (contains(l.day_panel, st.mouse)) {
+        if (contains(l.hour_panel, st.mouse)) {
             char tip[48];
-            const double left = (1.0 - run.day_progress()) * run.day_length_s();
-            std::snprintf(tip, sizeof(tip), "Card draft at midnight, in %.0fs", std::ceil(left));
+            const double left = (1.0 - run.hour_progress()) * run.hour_length_s();
+            std::snprintf(tip, sizeof(tip), "Card draft on the hour, in %.0fs", std::ceil(left));
             const float fs = 14.0f * s;
-            const Rectangle tr{l.day_panel.x, l.bar.y + l.bar.height + 6.0f * s,
+            const Rectangle tr{l.hour_panel.x, l.bar.y + l.bar.height + 6.0f * s,
                                measure(tip, fs, Weight::Bold) + 24.0f * s, 28.0f * s};
             panel(tr, s);
             text(tip, tr.x + 12.0f * s, tr.y + (tr.height - fs) * 0.5f, fs, kInk, Weight::Bold);

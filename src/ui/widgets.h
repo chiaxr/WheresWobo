@@ -24,7 +24,7 @@ inline constexpr Color kGood{6, 214, 160, 255};
 inline constexpr Color kCyan{76, 201, 240, 255};
 inline constexpr Color kOutline{30, 28, 40, 255};
 inline constexpr Color kBackground{12, 15, 29, 255};
-inline constexpr Color kSpot{42, 51, 88, 255};       // a lifted navy (the clock's night half)
+inline constexpr Color kSpot{42, 51, 88, 255};       // a lifted navy (the poster's glow)
 
 bool contains(Rectangle r, Vector2 p);
 Rectangle inset(Rectangle r, float d);

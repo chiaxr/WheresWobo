@@ -26,7 +26,7 @@ namespace wobo {
 enum class RunPhase { Playing, Drafting, Over };
 
 struct GameEvent {
-    enum class Type { ActionUsed, Teleported, DayEnded, CardChosen, CloseCall, Localized, Spin };
+    enum class Type { ActionUsed, Teleported, HourEnded, CardChosen, CloseCall, Localized, Spin };
     Type type;
     ActionId action = ActionId::Range;
     Pose2D from;
@@ -36,7 +36,7 @@ struct GameEvent {
 
 struct RunScore {
     double survival_s = 0.0;
-    int day = 1;             // current day (days survived = day - 1)
+    int hour = 1;            // current hour (hours survived = hour - 1)
     int actions_used = 0;
     int kidnaps = 0;
     int close_calls = 0;
@@ -94,11 +94,11 @@ public:
     // 0..1: how close Wobo is to being declared found. Drives Brinkmanship
     // and the HUD's danger meter.
     float danger() const;
-    float day_progress() const { return static_cast<float>(day_time_s_ / day_length_s_); }
-    // How far Wobo's sensors are from their rated noise today: 1 on day 1,
-    // shrinking each day as it "calibrates". 0 means fully calibrated.
+    float hour_progress() const { return static_cast<float>(hour_time_s_ / hour_length_s_); }
+    // How far Wobo's sensors are from their rated noise this hour: 1 in hour 1,
+    // shrinking each hour as it "calibrates". 0 means fully calibrated.
     float calibration_noise() const;
-    double day_length_s() const { return day_length_s_; }
+    double hour_length_s() const { return hour_length_s_; }
 
 private:
     void push(GameEvent e) { events_.push_back(std::move(e)); }
@@ -126,9 +126,9 @@ private:
     std::vector<const CardDef*> offer_;
     std::vector<std::string> picked_;
     std::vector<GameEvent> events_;
-    double day_length_s_ = 40.0;
-    double day_time_s_ = 0.0;
-    int day_ = 1;
+    double hour_length_s_ = 40.0;
+    double hour_time_s_ = 0.0;
+    int hour_ = 1;
     int kidnaps_ = 0;
     int last_close_calls_ = 0;
     int last_spins_ = 0;
