@@ -1,0 +1,20 @@
+# Build directories
+build/
+build-*/
+cmake-build-*/
+dist/
+
+# Local tooling
+compile_commands.json
+.cache/
+__pycache__/
+*.pyc
+
+# Saves written next to the desktop binary
+wheres_wobo_save.txt
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp

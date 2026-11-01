@@ -1,0 +1,333 @@
+#include "localization/particle_filter.h"
+
+#include <algorithm>
+#include <cmath>
+
+#include "world/raycast.h"
+
+namespace wobo {
+
+ParticleFilterConfig ParticleFilterConfig::from(const Config& cfg) {
+    ParticleFilterConfig c;
+    c.particles = std::max(50, cfg.get_int("localizer.particles", c.particles));
+    c.robot_radius = cfg.get_float("robot.radius", c.robot_radius);
+    c.beam_stride = std::max(1, cfg.get_int("localizer.beam_stride", c.beam_stride));
+    c.sigma_range = cfg.get_float("localizer.sigma_range", c.sigma_range);
+    c.sigma_colour = cfg.get_float("localizer.sigma_colour", c.sigma_colour);
+    c.colour_floor = cfg.get_float("localizer.colour_floor", c.colour_floor);
+    c.p_random = cfg.get_float("localizer.p_random", c.p_random);
+    c.p_unexpected_miss = cfg.get_float("localizer.p_unexpected_miss", c.p_unexpected_miss);
+    c.temperature = cfg.get_float("localizer.temperature", c.temperature);
+    c.forward_var_per_m = cfg.get_float("localizer.forward_var_per_m", c.forward_var_per_m);
+    c.lateral_var_per_m = cfg.get_float("localizer.lateral_var_per_m", c.lateral_var_per_m);
+    c.turn_var_per_rad = cfg.get_float("localizer.turn_var_per_rad", c.turn_var_per_rad);
+    c.turn_var_per_m = cfg.get_float("localizer.turn_var_per_m", c.turn_var_per_m);
+    c.jitter_m = cfg.get_float("localizer.jitter_m", c.jitter_m);
+    c.jitter_rad = cfg.get_float("localizer.jitter_rad", c.jitter_rad);
+    c.alpha_slow = cfg.get_float("localizer.alpha_slow", c.alpha_slow);
+    c.alpha_fast = cfg.get_float("localizer.alpha_fast", c.alpha_fast);
+    c.max_injection = cfg.get_float("localizer.max_injection", c.max_injection);
+    c.resample_ess = cfg.get_float("localizer.resample_ess", c.resample_ess);
+    c.cluster_radius_m = cfg.get_float("localizer.cluster_radius", c.cluster_radius_m);
+    c.cluster_heading_rad =
+        cfg.get_float("localizer.cluster_heading_deg", c.cluster_heading_rad * kRadToDeg) * kDegToRad;
+    return c;
+}
+
+Pose2D ParticleFilter::sample_prior() {
+    if (prior_.kind == InitialBelief::Kind::Gaussian) {
+        for (int attempt = 0; attempt < 100; ++attempt) {
+            Pose2D p{prior_.mean.x + rng_.normal(0.0f, prior_.sigma_position_m),
+                     prior_.mean.z + rng_.normal(0.0f, prior_.sigma_position_m),
+                     wrap_angle(prior_.mean.heading_rad + rng_.normal(0.0f, prior_.sigma_heading_rad))};
+            if (map_->valid_pose(p, config_.robot_radius)) return p;
+        }
+    }
+    return map_->sample_valid_pose(rng_, config_.robot_radius);
+}
+
+void ParticleFilter::reset(const Map2D& known_map, const InitialBelief& prior, std::uint64_t seed) {
+    map_ = &known_map;
+    prior_ = prior;
+    rng_.reseed(seed);
+    const int n = config_.particles;
+    diag_ = LocalizationDiagnostics{};
+    diag_.particles.resize(static_cast<std::size_t>(n));
+    for (auto& p : diag_.particles) {
+        p.pose = sample_prior();
+        p.weight = 1.0f / static_cast<float>(n);
+    }
+    log_lik_.assign(static_cast<std::size_t>(n), 0.0f);
+    have_averages_ = false;
+    w_slow_ = w_fast_ = 0.0f;
+    beam_offset_ = 0;
+    update_estimate();
+}
+
+void ParticleFilter::predict(const OdometryDelta& odom) {
+    if (!map_) return;
+    const float dist = std::fabs(odom.forward_m) + std::fabs(odom.lateral_m);
+    const float rot = std::fabs(odom.delta_heading_rad);
+    if (dist < 1e-6f && rot < 1e-6f) return;
+
+    const float sf = std::sqrt(config_.forward_var_per_m * dist);
+    const float sl = std::sqrt(config_.lateral_var_per_m * dist);
+    const float st = std::sqrt(config_.turn_var_per_rad * rot + config_.turn_var_per_m * dist);
+    for (auto& p : diag_.particles) {
+        const RelativeMotion m{odom.forward_m + rng_.normal(0.0f, sf),
+                               odom.lateral_m + rng_.normal(0.0f, sl),
+                               odom.delta_heading_rad + rng_.normal(0.0f, st)};
+        p.pose = compose(p.pose, m);
+    }
+    // Keep the estimate moving with the robot between scans.
+    estimate_.pose = compose(estimate_.pose, odom.motion());
+    for (auto& h : diag_.hypotheses) h.pose = compose(h.pose, odom.motion());
+}
+
+void ParticleFilter::observe(const RgbLidarScan& scan) {
+    if (!map_ || !scan.valid || scan.returns.empty()) return;
+
+    // The beams used this update. The offset rotates so every beam
+    // contributes over successive scans.
+    struct Beam {
+        float angle;
+        float range;
+        bool hit;
+        Rgb rgb;
+    };
+    std::vector<Beam> beams;
+    const int n_returns = static_cast<int>(scan.returns.size());
+    for (int i = beam_offset_ % config_.beam_stride; i < n_returns; i += config_.beam_stride) {
+        const LidarReturn& r = scan.returns[i];
+        beams.push_back({r.angle_rad, r.range_m, r.hit, r.rgb});
+    }
+    beam_offset_ = (beam_offset_ + 1) % config_.beam_stride;
+    if (beams.empty()) return;
+
+    const float max_range = scan.max_range_m;
+    const float inv_sr2 = 1.0f / (config_.sigma_range * config_.sigma_range);
+    const float inv_sc2 = 1.0f / (config_.sigma_colour * config_.sigma_colour);
+    const float eps = config_.p_random;
+    const float n_beams = static_cast<float>(beams.size());
+    const float wall_log_lik = n_beams * std::log(eps * 0.2f);
+
+    const std::size_t n = diag_.particles.size();
+    float w_avg = 0.0f;
+    float max_ll = -1e30f;
+    for (std::size_t i = 0; i < n; ++i) {
+        const Pose2D& pose = diag_.particles[i].pose;
+        float ll = 0.0f;
+        if (!map_->point_free(pose.x, pose.z)) {
+            ll = wall_log_lik;
+        } else {
+            for (const Beam& b : beams) {
+                const RayHit e = cast_ray(*map_, pose.x, pose.z, pose.heading_rad + b.angle, max_range);
+                float p;
+                if (b.hit) {
+                    const float dr = b.range - e.range;  // e.range == max_range for a miss
+                    const float pr = std::exp(-0.5f * dr * dr * inv_sr2);
+                    float pc = 1.0f;
+                    if (e.hit) {
+                        const float dc = colour_distance(b.rgb, map_->material(e.material).rgb);
+                        pc = config_.colour_floor +
+                             (1.0f - config_.colour_floor) * std::exp(-0.5f * dc * dc * inv_sc2);
+                    }
+                    p = (1.0f - eps) * pr * pc + eps;
+                } else {
+                    p = e.hit ? config_.p_unexpected_miss : 1.0f;
+                }
+                ll += std::log(p);
+            }
+        }
+        log_lik_[i] = ll;
+        w_avg += diag_.particles[i].weight * std::exp(ll / n_beams);
+        max_ll = std::max(max_ll, ll);
+    }
+
+    // Augmented MCL: compare short- and long-term average fit.
+    if (!have_averages_) {
+        w_slow_ = w_fast_ = w_avg;
+        have_averages_ = true;
+    } else {
+        w_slow_ += config_.alpha_slow * (w_avg - w_slow_);
+        w_fast_ += config_.alpha_fast * (w_avg - w_fast_);
+    }
+    const float ratio = w_slow_ > 1e-9f ? w_fast_ / w_slow_ : 1.0f;
+    const float inject = clampf(1.0f - ratio, 0.0f, config_.max_injection);
+    estimate_.consistency = clampf(ratio, 0.0f, 1.0f);
+
+    // Reweight (tempered), normalise, and measure degeneracy.
+    float sum = 0.0f;
+    for (std::size_t i = 0; i < n; ++i) {
+        auto& p = diag_.particles[i];
+        p.weight *= std::exp(config_.temperature * (log_lik_[i] - max_ll));
+        sum += p.weight;
+    }
+    float sum_sq = 0.0f;
+    if (sum <= 0.0f || !std::isfinite(sum)) {
+        for (auto& p : diag_.particles) p.weight = 1.0f / static_cast<float>(n);
+        sum_sq = 1.0f / static_cast<float>(n);
+    } else {
+        for (auto& p : diag_.particles) {
+            p.weight /= sum;
+            sum_sq += p.weight * p.weight;
+        }
+    }
+    diag_.effective_sample_size = (1.0f / sum_sq) / static_cast<float>(n);
+
+    diag_.injected_fraction = 0.0f;
+    if (diag_.effective_sample_size < config_.resample_ess || inject > 0.005f) {
+        resample(inject);
+    }
+    update_estimate();
+}
+
+void ParticleFilter::resample(float inject_fraction) {
+    const std::size_t n = diag_.particles.size();
+    scratch_.resize(n);
+    const auto n_inject = static_cast<std::size_t>(inject_fraction * static_cast<float>(n));
+    const std::size_t n_keep = n - n_inject;
+
+    // Low-variance (systematic) resampling.
+    const float step = 1.0f / static_cast<float>(n_keep);
+    float u = rng_.uniform() * step;
+    float c = diag_.particles[0].weight;
+    std::size_t j = 0;
+    for (std::size_t i = 0; i < n_keep; ++i) {
+        while (u > c && j + 1 < n) c += diag_.particles[++j].weight;
+        Pose2D p = diag_.particles[j].pose;
+        p.x += rng_.normal(0.0f, config_.jitter_m);
+        p.z += rng_.normal(0.0f, config_.jitter_m);
+        p.heading_rad = wrap_angle(p.heading_rad + rng_.normal(0.0f, config_.jitter_rad));
+        scratch_[i] = {p, 0.0f};
+        u += step;
+    }
+    for (std::size_t i = n_keep; i < n; ++i) {
+        scratch_[i] = {map_->sample_valid_pose(rng_, config_.robot_radius), 0.0f};
+    }
+    const float w = 1.0f / static_cast<float>(n);
+    for (auto& p : scratch_) p.weight = w;
+    diag_.particles.swap(scratch_);
+    diag_.injected_fraction = inject_fraction;
+}
+
+void ParticleFilter::update_estimate() {
+    // Find up to four distinct pose clusters: histogram the particles over
+    // (cell, heading octant), seed at the heaviest neighbourhood, refine with
+    // two mean-shift iterations, claim the members, repeat.
+    const int w = map_->width();
+    const int h = map_->height();
+    constexpr int kHeadingBins = 8;
+    const auto bin_of = [&](const Pose2D& p) {
+        const int cx = std::clamp(map_->cell_x(p.x), 0, w - 1);
+        const int cz = std::clamp(map_->cell_z(p.z), 0, h - 1);
+        int hb = static_cast<int>(std::floor((p.heading_rad + kPi) / kTwoPi * kHeadingBins));
+        hb = (hb % kHeadingBins + kHeadingBins) % kHeadingBins;
+        return (cz * w + cx) * kHeadingBins + hb;
+    };
+
+    const std::size_t n = diag_.particles.size();
+    claimed_.assign(n, 0);
+    diag_.hypotheses.clear();
+    const float r2 = config_.cluster_radius_m * config_.cluster_radius_m;
+
+    for (int round = 0; round < 4; ++round) {
+        histogram_.assign(static_cast<std::size_t>(w * h * kHeadingBins), 0.0f);
+        float remaining = 0.0f;
+        for (std::size_t i = 0; i < n; ++i) {
+            if (claimed_[i]) continue;
+            histogram_[bin_of(diag_.particles[i].pose)] += diag_.particles[i].weight;
+            remaining += diag_.particles[i].weight;
+        }
+        if (remaining < 0.03f) break;
+
+        // Heaviest 3x3x3 neighbourhood.
+        float best = -1.0f;
+        int best_bin = 0;
+        for (int cz = 0; cz < h; ++cz) {
+            for (int cx = 0; cx < w; ++cx) {
+                for (int hb = 0; hb < kHeadingBins; ++hb) {
+                    if (histogram_[(cz * w + cx) * kHeadingBins + hb] <= 0.0f) continue;
+                    float s = 0.0f;
+                    for (int dz = -1; dz <= 1; ++dz) {
+                        for (int dx = -1; dx <= 1; ++dx) {
+                            const int x = cx + dx;
+                            const int z = cz + dz;
+                            if (x < 0 || z < 0 || x >= w || z >= h) continue;
+                            for (int dh = -1; dh <= 1; ++dh) {
+                                const int b = (hb + dh + kHeadingBins) % kHeadingBins;
+                                s += histogram_[(z * w + x) * kHeadingBins + b];
+                            }
+                        }
+                    }
+                    if (s > best) {
+                        best = s;
+                        best_bin = (cz * w + cx) * kHeadingBins + hb;
+                    }
+                }
+            }
+        }
+        const int hb = best_bin % kHeadingBins;
+        const int cell = best_bin / kHeadingBins;
+        const Vec2 c = map_->cell_center(cell % w, cell / w);
+        Pose2D mean{c.x, c.z, -kPi + (hb + 0.5f) * kTwoPi / kHeadingBins};
+
+        // Mean shift within the cluster window.
+        float mass = 0.0f;
+        float vxx = 0.0f, vzz = 0.0f, vxz = 0.0f, vhh = 0.0f;
+        const float window_r2 = 4.0f * r2;
+        for (int iter = 0; iter < 3; ++iter) {
+            const float rr = iter == 0 ? window_r2 : r2;
+            const float hh = iter == 0 ? 2.0f * config_.cluster_heading_rad : config_.cluster_heading_rad;
+            float sx = 0.0f, sz = 0.0f, sc = 0.0f, ss = 0.0f;
+            mass = 0.0f;
+            for (std::size_t i = 0; i < n; ++i) {
+                if (claimed_[i]) continue;
+                const auto& p = diag_.particles[i];
+                const float dx = p.pose.x - mean.x;
+                const float dz = p.pose.z - mean.z;
+                if (dx * dx + dz * dz > rr) continue;
+                if (std::fabs(angle_diff(p.pose.heading_rad, mean.heading_rad)) > hh) continue;
+                sx += p.weight * p.pose.x;
+                sz += p.weight * p.pose.z;
+                sc += p.weight * std::cos(p.pose.heading_rad);
+                ss += p.weight * std::sin(p.pose.heading_rad);
+                mass += p.weight;
+            }
+            if (mass <= 0.0f) break;
+            mean = {sx / mass, sz / mass, std::atan2(ss, sc)};
+        }
+        if (mass <= 0.0f) break;
+
+        // Claim members and measure spread.
+        for (std::size_t i = 0; i < n; ++i) {
+            if (claimed_[i]) continue;
+            const auto& p = diag_.particles[i];
+            const float dx = p.pose.x - mean.x;
+            const float dz = p.pose.z - mean.z;
+            if (dx * dx + dz * dz > r2) continue;
+            const float dh = angle_diff(p.pose.heading_rad, mean.heading_rad);
+            if (std::fabs(dh) > config_.cluster_heading_rad) continue;
+            claimed_[i] = 1;
+            vxx += p.weight * dx * dx;
+            vzz += p.weight * dz * dz;
+            vxz += p.weight * dx * dz;
+            vhh += p.weight * dh * dh;
+        }
+        diag_.hypotheses.push_back({mean, mass});
+        if (round == 0) {
+            estimate_.pose = mean;
+            estimate_.valid = true;
+            estimate_.confidence = clampf(mass, 0.0f, 1.0f);
+            estimate_.has_covariance = true;
+            estimate_.var_x = vxx / mass;
+            estimate_.var_z = vzz / mass;
+            estimate_.cov_xz = vxz / mass;
+            estimate_.var_heading = vhh / mass;
+        }
+    }
+    std::sort(diag_.hypotheses.begin(), diag_.hypotheses.end(),
+              [](const WeightedPose& a, const WeightedPose& b) { return a.weight > b.weight; });
+}
+
+}  // namespace wobo

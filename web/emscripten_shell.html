@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Where's Wobo?</title>
+    <meta name="description" content="Keep an autonomous robot lost for as long as you can: sabotage its sensors, scramble its odometry and kidnap it before it works out where it is.">
+    <link rel="canonical" href="https://chiaxr.github.io/WheresWobo/">
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Where's Wobo?">
+    <meta property="og:url" content="https://chiaxr.github.io/WheresWobo/">
+    <meta property="og:title" content="Where's Wobo?">
+    <meta property="og:description" content="Keep an autonomous robot lost for as long as you can: sabotage its sensors, scramble its odometry and kidnap it before it works out where it is.">
+
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Where's Wobo?">
+    <meta name="twitter:description" content="Keep an autonomous robot lost for as long as you can.">
+    <style>
+        :root { color-scheme: dark; }
+        html, body {
+            margin: 0; padding: 0; height: 100%; background: #30344e; color: #f8f2e6;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            overflow: hidden; overscroll-behavior: none;
+            -webkit-user-select: none; user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* The canvas fills a fixed, inset container rather than being sized in
+           vh units: on mobile Safari 100vh is the viewport with the URL bar
+           hidden, while raylib sizes its framebuffer from the window, and the
+           mismatch would scale the picture. Emscripten strips any inline size
+           it finds, so the sizing has to live in CSS. */
+        #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+        canvas.emscripten {
+            display: block; width: 100%; height: 100%; border: 0;
+            touch-action: none; outline: none;
+        }
+        #rotate, #loading {
+            position: fixed; inset: 0; display: none; z-index: 10;
+            align-items: center; justify-content: center; text-align: center;
+            background: #30344e; padding: 24px;
+        }
+        #loading { display: flex; z-index: 5; }
+        #rotate p, #loading p { font-size: 1.1rem; color: #b0acc6; max-width: 20rem; line-height: 1.5; }
+        #loading h1 { color: #ffd23f; margin: 0 0 8px; font-size: 2rem; }
+    </style>
+</head>
+<body>
+    <div id="wrap">
+        <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    </div>
+    <div id="loading"><div><h1>Where's Wobo?</h1><p>Waking Wobo up&hellip;</p></div></div>
+    <div id="rotate"><p>Turn your device sideways to keep Wobo lost.</p></div>
+
+    <script type="text/javascript">
+        var Module = {
+            canvas: document.getElementById('canvas'),
+            onRuntimeInitialized: function () {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('canvas').focus();
+            },
+            // Orientation hook consulted by the C++ web loop.
+            __woboIsPortrait: function () {
+                var portrait = window.innerHeight > window.innerWidth;
+                document.getElementById('rotate').style.display = portrait ? 'flex' : 'none';
+                return portrait;
+            }
+        };
+        // Keyboard focus for the canvas after any tap or click.
+        window.addEventListener('pointerdown', function () { document.getElementById('canvas').focus(); });
+    </script>
+    {{{ SCRIPT }}}
+</body>
+</html>

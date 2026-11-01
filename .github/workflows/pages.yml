@@ -1,0 +1,105 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # raylib (and its bundled GLFW) needs the X11/GL headers to configure,
+      # even though the tests themselves never open a window.
+      - name: Install raylib build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build tests and benchmark
+        run: cmake --build build --target wobo_tests wobo_bench --config Release
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Emscripten
+        uses: emscripten-core/setup-emsdk@v16
+        with:
+          version: 6.0.9
+
+      - name: Configure web build
+        run: |
+          emcmake cmake -S . -B build-web \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWOBO_BUILD_NATIVE=OFF \
+            -DWOBO_BUILD_WEB=ON
+
+      - name: Build web target
+        run: cmake --build build-web --target wobo_web --config Release
+
+      - name: Verify web artifacts
+        run: |
+          test -s build-web/dist/index.html
+          test -s build-web/dist/index.js
+          test -s build-web/dist/index.wasm
+
+      - name: Reject default shell branding
+        run: |
+          if grep -Eiq 'emscripten[ _-]?logo|Powered by Emscripten|emscripten.org|spinner' build-web/dist/index.html; then
+            echo "Generated index.html contains default Emscripten branding or UI."
+            exit 1
+          fi
+
+      - name: Add Pages metadata
+        run: touch build-web/dist/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: build-web/dist
+
+  deploy:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

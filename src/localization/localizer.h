@@ -1,0 +1,34 @@
+#pragma once
+
+// The replaceable localization interface. A localizer sees the known map,
+// its prior, noisy odometry and RGB LiDAR scans -- never ground truth, player
+// actions or the renderer. New algorithms implement this and register in
+// localizer_registry.cpp; nothing else in the game needs to change.
+
+#include <cstdint>
+#include <string_view>
+
+#include "core/messages.h"
+#include "localization/localization_types.h"
+#include "world/map2d.h"
+
+namespace wobo {
+
+class ILocalizer {
+public:
+    virtual ~ILocalizer() = default;
+
+    virtual std::string_view name() const = 0;
+
+    // `known_map` outlives the localizer's use of it.
+    virtual void reset(const Map2D& known_map, const InitialBelief& prior, std::uint64_t seed) = 0;
+
+    virtual void predict(const OdometryDelta& odometry) = 0;
+    virtual void observe(const RgbLidarScan& scan) = 0;
+
+    virtual PoseEstimate estimate() const = 0;
+    // nullptr when the method has no diagnostics to offer.
+    virtual const LocalizationDiagnostics* diagnostics() const = 0;
+};
+
+}  // namespace wobo
