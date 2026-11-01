@@ -46,17 +46,16 @@ void day_clock(Vector2 c, float radius, float progress, float s, float time_s) {
     const float pulse = closing ? 1.0f + 0.06f * std::sin(time_s * 10.0f) : 1.0f;
     const float r = radius * pulse;
 
-    DrawCircleV({c.x + 2.0f * s, c.y + 3.0f * s}, r, kShadow);
-    DrawCircleV(c, r, kOutline);
-    DrawCircleV(c, r - 2.5f * s, Color{250, 244, 232, 255});
+    DrawCircleV(c, r, kPanelEdge);
+    DrawCircleV(c, r - 1.5f * s, kRaised);
     // Night: 18:00 through midnight to 06:00 is the top half of the dial.
-    DrawCircleSector(c, r - 2.5f * s, 180.0f, 360.0f, 32, Color{196, 202, 236, 255});
+    DrawCircleSector(c, r - 1.5f * s, 180.0f, 360.0f, 32, kSpot);
 
     // Elapsed wedge, from twelve o'clock clockwise.
     if (progress > 0.0f) {
         Color wedge = closing ? kEnergy : kGood;
         wedge.a = 200;
-        DrawCircleSector(c, r - 4.0f * s, -90.0f, -90.0f + 360.0f * progress, 48, wedge);
+        DrawCircleSector(c, r - 3.5f * s, -90.0f, -90.0f + 360.0f * progress, 48, wedge);
     }
 
     // Ticks: twelve, with the quarters longer.
@@ -64,22 +63,38 @@ void day_clock(Vector2 c, float radius, float progress, float s, float time_s) {
         const float a = (-90.0f + 30.0f * i) * DEG2RAD;
         const float len = (i % 3 == 0 ? 6.0f : 3.5f) * s;
         const Vector2 dir{std::cos(a), std::sin(a)};
-        const float outer = r - 4.0f * s;
+        const float outer = r - 3.0f * s;
         DrawLineEx({c.x + dir.x * outer, c.y + dir.y * outer},
-                   {c.x + dir.x * (outer - len), c.y + dir.y * (outer - len)}, (i % 3 == 0 ? 2.0f : 1.2f) * s,
-                   kOutline);
+                   {c.x + dir.x * (outer - len), c.y + dir.y * (outer - len)}, (i % 3 == 0 ? 1.6f : 1.0f) * s,
+                   kMuted);
     }
 
     // A little card at twelve: the draft.
-    const Rectangle card{c.x - 4.0f * s, c.y - r + 4.5f * s, 8.0f * s, 10.0f * s};
+    const Rectangle card{c.x - 3.5f * s, c.y - r + 3.5f * s, 7.0f * s, 9.0f * s};
     DrawRectangleRounded(card, 0.3f, 4, kBelief);
     DrawRectangleRoundedLinesEx(card, 0.3f, 4, 1.2f * s, kOutline);
 
     // The hand.
     const float a = (-90.0f + 360.0f * progress) * DEG2RAD;
-    const float len = r - 7.0f * s;
-    DrawLineEx(c, {c.x + std::cos(a) * len, c.y + std::sin(a) * len}, 3.0f * s, kOutline);
-    DrawCircleV(c, 3.5f * s, kOutline);
+    const float len = r - 6.0f * s;
+    DrawLineEx(c, {c.x + std::cos(a) * len, c.y + std::sin(a) * len}, 2.4f * s, kInk);
+    DrawCircleV(c, 3.0f * s, kInk);
+}
+
+// One button of the time controls: the current mode is lit cyan.
+void segment(Rectangle r, Icon which, bool on, bool hovered, float s) {
+    const float k = std::min(1.0f, 18.0f * s / std::min(r.width, r.height));
+    if (on) DrawRectangleRounded(r, k, 8, kCyan);
+    else if (hovered) DrawRectangleRounded(r, k, 8, kRaised);
+    icon(which, {r.x + r.width * 0.5f, r.y + r.height * 0.5f}, std::min(r.width, r.height) * 0.36f,
+         on ? kBackground : kInk);
+}
+
+// A thin rounded track with no outline, for the bar's quieter meters.
+void slim_meter(Rectangle r, float frac, Color fill) {
+    frac = std::clamp(frac, 0.0f, 1.0f);
+    DrawRectangleRounded(r, 1.0f, 8, kBackground);
+    if (frac > 0.0f) DrawRectangleRounded({r.x, r.y, std::max(r.height, r.width * frac), r.height}, 1.0f, 8, fill);
 }
 
 }  // namespace
@@ -90,7 +105,7 @@ double speed_value(int index) {
 }
 
 bool hud_contains(const HudLayout& l, Vector2 p) {
-    for (const Rectangle& r : {l.day_panel, l.status_panel, l.help, l.menu, l.energy}) {
+    for (const Rectangle& r : {l.bar, l.energy}) {
         if (contains(r, p)) return true;
     }
     for (const auto& [id, r] : l.actions) {
@@ -103,37 +118,48 @@ HudLayout layout_hud(int w, int h, float s, const RunDirector& run) {
     HudLayout l;
     l.s = s;
     const float m = 12.0f * s;
-    const float bh = 46.0f * s;
-    const float gap = 6.0f * s;
+    const float row = 72.0f * s;
+    const float pad = 12.0f * s;
+    const float g = 14.0f * s;
+    const float bb = 44.0f * s;  // help and menu buttons
+    l.bar = {m, m, w - 2.0f * m, row};
+    const float cy = l.bar.y + row * 0.5f;
 
-    // Day panel: day, time and clock on top, the time controls in a row below.
-    const float tb = 38.0f * s;
-    l.day_panel = {m, m, 200.0f * s, 78.0f * s + tb + 8.0f * s};
-    {
-        const float pad = 12.0f * s;
-        const float tw = (l.day_panel.width - 2.0f * pad - 2.0f * gap) / 3.0f;
-        const float ty = l.day_panel.y + l.day_panel.height - pad - tb;
-        l.pause = {l.day_panel.x + pad, ty, tw, tb};
-        l.play = {l.pause.x + tw + gap, ty, tw, tb};
-        l.fast = {l.play.x + tw + gap, ty, tw, tb};
+    // Left: clock, day and time, then the time controls in a well.
+    float x = l.bar.x + pad;
+    l.clock_r = 26.0f * s;
+    l.clock = {x + l.clock_r, cy};
+    l.day_panel = {x, l.bar.y + 6.0f * s, 2.0f * l.clock_r + 10.0f * s + 84.0f * s, row - 12.0f * s};
+    x += l.day_panel.width + g;
+    const float tw = 44.0f * s;
+    const float tg = 3.0f * s;
+    l.transport = {x, cy - 22.0f * s, 3.0f * tw + 4.0f * tg, 44.0f * s};
+    l.pause = {x + tg, cy - 19.0f * s, tw, 38.0f * s};
+    l.play = {l.pause.x + tw + tg, l.pause.y, tw, l.pause.height};
+    l.fast = {l.play.x + tw + tg, l.pause.y, tw, l.pause.height};
+    x = l.transport.x + l.transport.width + g;
+    l.dividers.push_back(x);
+    x += g;
+
+    // Right: help and menu.
+    float rx = l.bar.x + l.bar.width - pad;
+    l.menu = {rx - bb, cy - bb * 0.5f, bb, bb};
+    l.help = {l.menu.x - 8.0f * s - bb, l.menu.y, bb, bb};
+    rx = l.help.x - g;
+    l.dividers.push_back(rx);
+    rx -= g;
+
+    // Middle: Wobo's status, or a second row of its own when there is no room.
+    Rectangle st{x, l.bar.y, rx - x, row};
+    if (st.width < 360.0f * s) {
+        l.two_rows = true;
+        l.bar.height += 64.0f * s;
+        st = {l.bar.x + pad, l.bar.y + row, l.bar.width - 2.0f * pad, 64.0f * s};
     }
-
-    // Top-right controls, laid out from the right edge.
-    float x = static_cast<float>(w) - m;
-    const auto take = [&](float width) {
-        x -= width;
-        const Rectangle r{x, m, width, bh};
-        x -= gap;
-        return r;
-    };
-    l.menu = take(bh);
-    l.help = take(bh);
-
-    const float left = l.day_panel.x + l.day_panel.width + m;
-    const float right = l.help.x - m;
-    const float sw = std::max(160.0f * s, std::min(470.0f * s, right - left));
-    const float sx = std::clamp(w * 0.5f - sw * 0.5f, left, std::max(left, right - sw));
-    l.status_panel = {sx, m, sw, 78.0f * s};
+    l.status_panel = {st.x - 8.0f * s, st.y + 6.0f * s, st.width + 16.0f * s, st.height - 12.0f * s};
+    const float cw = std::min(240.0f * s, st.width * 0.45f);
+    l.confidence = {st.x + st.width - cw, st.y, cw, st.height};
+    l.mood = {st.x, st.y, st.width - cw - g, st.height};
 
     // Bottom: action bar with the energy meter above it.
     std::vector<ActionId> owned;
@@ -159,7 +185,7 @@ HudLayout layout_hud(int w, int h, float s, const RunDirector& run) {
     l.energy = {w * 0.5f - ew * 0.5f, ay - 12.0f * s - 24.0f * s, ew, 24.0f * s};
     l.effects_origin = {m, l.energy.y - 10.0f * s, 0, 0};
 
-    l.top_inset = (std::max(l.status_panel.y + l.status_panel.height, l.day_panel.y + l.day_panel.height) + m) / h;
+    l.top_inset = (l.bar.y + l.bar.height + m) / h;
     l.bottom_inset = (h - l.energy.y + m) / h;
     return l;
 }
@@ -168,57 +194,70 @@ void draw_hud(const HudLayout& l, const RunDirector& run, const HudState& st) {
     const float s = l.s;
     const RunScore score = run.score();
 
+    // --- The bar --------------------------------------------------------
+    panel(l.bar, s, kPanel, kPanelEdge, 18.0f);
+    const float line = std::max(1.0f, 1.0f * s);
+    for (float dx : l.dividers) {
+        DrawRectangleRec({dx, l.bar.y + 14.0f * s, line, 72.0f * s - 28.0f * s}, kPanelEdge);
+    }
+    if (l.two_rows) {
+        DrawRectangleRec({l.bar.x + 14.0f * s, l.bar.y + 72.0f * s, l.bar.width - 28.0f * s, line}, kPanelEdge);
+    }
+
     // --- Day and time ---------------------------------------------------
-    panel(l.day_panel, s);
     {
-        Rectangle r = inset(l.day_panel, 12.0f * s);
-        r.height = 78.0f * s - 24.0f * s;  // the top part; the time controls sit below
+        day_clock(l.clock, l.clock_r, run.day_progress(), s, st.time_s);
+        const float tx = l.clock.x + l.clock_r + 10.0f * s;
         char day[32];
         std::snprintf(day, sizeof(day), "DAY %d", score.day);
-        text(day, r.x, r.y - 2.0f * s, 28.0f * s, kInk, Weight::Bold);
+        text(day, tx, l.clock.y - 22.0f * s, 20.0f * s, kInk, Weight::Bold);
         const std::string t = time_of_day(run.day_progress());
-        text(t.c_str(), r.x, r.y + 30.0f * s, 22.0f * s, kEnergy, Weight::Bold);
+        text(t.c_str(), tx, l.clock.y + 2.0f * s, 17.0f * s, kEnergy, Weight::Bold);
 
-        const float radius = r.height * 0.5f + 2.0f * s;
-        day_clock({r.x + r.width - radius, r.y + r.height * 0.5f}, radius, run.day_progress(), s, st.time_s);
-
-        const bool on_controls = contains(l.pause, st.mouse) || contains(l.play, st.mouse) ||
-                                 contains(l.fast, st.mouse);
-        if (contains(l.day_panel, st.mouse) && !on_controls) {
+        if (contains(l.day_panel, st.mouse)) {
             char tip[48];
             const double left = (1.0 - run.day_progress()) * run.day_length_s();
             std::snprintf(tip, sizeof(tip), "Card draft at midnight, in %.0fs", std::ceil(left));
             const float fs = 14.0f * s;
-            const Rectangle tr{l.day_panel.x, l.day_panel.y + l.day_panel.height + 6.0f * s,
+            const Rectangle tr{l.day_panel.x, l.bar.y + l.bar.height + 6.0f * s,
                                measure(tip, fs, Weight::Bold) + 24.0f * s, 28.0f * s};
             panel(tr, s);
             text(tip, tr.x + 12.0f * s, tr.y + (tr.height - fs) * 0.5f, fs, kInk, Weight::Bold);
         }
     }
 
-    // --- Wobo's status ---------------------------------------------------
-    panel(l.status_panel, s);
+    // --- Time controls: the current mode is lit ----------------------------
     {
-        const Rectangle r = inset(l.status_panel, 12.0f * s);
+        const float k = std::min(1.0f, 24.0f * s / l.transport.height);
+        DrawRectangleRounded(l.transport, k, 8, kBackground);
+        DrawRectangleRoundedLinesEx(l.transport, k, 8, line, kPanelEdge);
+        segment(l.pause, Icon::Pause, st.paused, contains(l.pause, st.mouse), s);
+        segment(l.play, Icon::Play, !st.paused && st.speed_index == 0, contains(l.play, st.mouse), s);
+        segment(l.fast, Icon::FastForward, !st.paused && st.speed_index == 1, contains(l.fast, st.mouse), s);
+    }
+
+    // --- Wobo's status ---------------------------------------------------
+    {
         const RobotAgent& agent = run.agent();
         const PoseEstimate est = agent.estimate();
         const RobotMood mood = agent.mood();
-        const float meters_w = std::min(190.0f * s, r.width * 0.45f);
-        const float text_w = r.width - meters_w - 12.0f * s;
+        const Rectangle r = l.mood;
+        const float top = r.y + r.height * 0.5f - 20.0f * s;
 
-        DrawCircleV({r.x + 8.0f * s, r.y + 11.0f * s}, 7.0f * s, mood_colour(mood));
-        DrawCircleLinesV({r.x + 8.0f * s, r.y + 11.0f * s}, 7.0f * s, kOutline);
+        DrawCircleV({r.x + 5.0f * s, top + 10.0f * s}, 5.0f * s, mood_colour(mood));
         std::string title = std::string("Wobo is ") + mood_name(mood);
-        text(title.c_str(), r.x + 22.0f * s, r.y, 20.0f * s, kInk, Weight::Bold);
+        text(title.c_str(), r.x + 17.0f * s, top, 18.0f * s, kInk, Weight::Bold);
         const std::string reason = "\"" + agent.plan().reason + "\"";
-        const auto lines = wrap(reason, 15.0f * s, text_w);
-        for (std::size_t i = 0; i < lines.size() && i < 2; ++i) {
-            text(lines[i].c_str(), r.x, r.y + (26.0f + 18.0f * i) * s, 15.0f * s, kMuted);
-        }
+        const auto lines = wrap(reason, 13.0f * s, r.width);
+        if (!lines.empty()) text(lines[0].c_str(), r.x, top + 25.0f * s, 13.0f * s, kMuted);
 
-        const float mx = r.x + r.width - meters_w;
-        text("Wobo's confidence", mx, r.y - 2.0f * s, 12.0f * s, kMuted);
-        meter({mx, r.y + 13.0f * s, meters_w, 10.0f * s}, est.confidence, kBelief, s);
+        const Rectangle c = l.confidence;
+        const float ctop = c.y + c.height * 0.5f - 21.0f * s;
+        text("CONFIDENCE", c.x, ctop, 11.0f * s, kMuted, Weight::Bold);
+        char pct[16];
+        std::snprintf(pct, sizeof(pct), "%d%%", static_cast<int>(std::round(est.confidence * 100.0f)));
+        text(pct, c.x + c.width - measure(pct, 11.0f * s, Weight::Bold), ctop, 11.0f * s, kMuted, Weight::Bold);
+        slim_meter({c.x, ctop + 17.0f * s, c.width, 8.0f * s}, est.confidence, kBelief);
 
         const LocalizationReferee& ref = run.referee();
         char lock[64];
@@ -231,29 +270,22 @@ void draw_hud(const HudLayout& l, const RunDirector& run, const HudState& st) {
             std::snprintf(lock, sizeof(lock), "Its best guess is %.1f m off", ref.position_error());
             lock_col = kGood;
         }
-        text(lock, mx, r.y + 31.0f * s, 12.0f * s, lock_col, Weight::Bold);
+        text(lock, c.x, ctop + 31.0f * s, 12.0f * s, lock_col, Weight::Bold);
 
-        // Lock-on: a red outline creeps round the box as the lock builds, and
-        // closes the loop when Wobo is found. Its length eases towards the
-        // real progress (and slides back when a lock slips); it pulses only
-        // once the lock has held long enough to sound the alarm.
+        // Lock-on: a red outline creeps round the status as the lock builds,
+        // and closes the loop when Wobo is found. Its length eases towards
+        // the real progress (and slides back when a lock slips); it pulses
+        // only once the lock has held long enough to sound the alarm.
         const float lock_t = st.lock_shown;
         if (lock_t > 0.002f) {
-            const Rectangle o = inset(l.status_panel, -5.0f * s);
             const float beat = st.alarm * (0.5f + 0.5f * std::sin(st.time_s * 12.0f));
-            const float thick = (4.0f + 2.0f * beat) * s;
+            const float thick = (3.0f + 2.0f * beat) * s;
             Color glow = kDanger;
             glow.a = static_cast<unsigned char>(50 + 70 * beat);
-            growing_outline(o, 16.0f * s, lock_t, thick * 2.6f, glow);
-            growing_outline(o, 16.0f * s, lock_t, thick, kDanger);
+            growing_outline(l.status_panel, 12.0f * s, lock_t, thick * 2.6f, glow);
+            growing_outline(l.status_panel, 12.0f * s, lock_t, thick, kDanger);
         }
     }
-
-    // --- Time controls: the current mode is highlighted ---------------------
-    const auto mode = [&](bool on) { return on ? Look::Toggled : Look::Normal; };
-    icon_button(l.pause, Icon::Pause, s, mode(st.paused), contains(l.pause, st.mouse));
-    icon_button(l.play, Icon::Play, s, mode(!st.paused && st.speed_index == 0), contains(l.play, st.mouse));
-    icon_button(l.fast, Icon::FastForward, s, mode(!st.paused && st.speed_index == 1), contains(l.fast, st.mouse));
 
     // --- Controls ----------------------------------------------------------
     button(l.help, "?", s, Look::Normal, contains(l.help, st.mouse));
@@ -408,8 +440,8 @@ void draw_hud(const HudLayout& l, const RunDirector& run, const HudState& st) {
     }
 
     // --- Toast / targeting banner ------------------------------------------
-    const float cx = l.status_panel.x + l.status_panel.width * 0.5f;
-    const float ty = l.status_panel.y + l.status_panel.height + 12.0f * s;
+    const float cx = l.bar.x + l.bar.width * 0.5f;
+    const float ty = l.bar.y + l.bar.height + 12.0f * s;
     if (st.targeting) {
         const char* msg = "Pick a spot to drop Wobo - drag to aim it. Right-click or Esc cancels.";
         const float fs = 16.0f * s;

@@ -3,6 +3,7 @@
 // Title screen, pause menu, help sheet and the end-of-run summary.
 
 #include <string>
+#include <vector>
 
 #include "raylib.h"
 
@@ -11,16 +12,23 @@
 
 namespace wobo::ui {
 
+// The wordmark sits top left; along the bottom, every map as a card, with
+// Play and How to play at the end of the row. A screen too narrow for the
+// row shows only the chosen map's card, between previous / next arrows.
 struct TitleLayout {
-    Rectangle panel{};
-    Rectangle prev{};
-    Rectangle next{};
+    Rectangle title{};              // the wordmark block
+    Rectangle panel{};              // the whole bottom block (description, cards, buttons)
+    std::vector<Rectangle> cards;   // one per map, in order; empty when narrow
+    Rectangle card{};               // narrow only: the chosen map
+    Rectangle prev{};               // narrow only
+    Rectangle next{};               // narrow only
     Rectangle play{};
     Rectangle help{};
 };
-TitleLayout layout_title(int w, int h, float s);
-void draw_title(const TitleLayout& l, float s, int w, int h, const MapInfo& map, const std::string& best,
-                Vector2 mouse, float time_s);
+TitleLayout layout_title(int w, int h, float s, int map_count);
+// `bests` holds a short best-run line per map, parallel to `maps`.
+void draw_title(const TitleLayout& l, float s, int w, int h, const std::vector<MapInfo>& maps, int selected,
+                const std::vector<std::string>& bests, Vector2 mouse, float time_s);
 
 struct PauseLayout {
     Rectangle panel{};

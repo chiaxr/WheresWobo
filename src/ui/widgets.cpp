@@ -4,6 +4,8 @@
 #include <cmath>
 #include <vector>
 
+#include "rlgl.h"
+
 #include "ui/ui_text.h"
 
 namespace wobo::ui {
@@ -21,12 +23,13 @@ float roundness(Rectangle r, float radius) {
 }
 }  // namespace
 
-void panel(Rectangle r, float s, Color fill, Color edge) {
-    const float rad = 12.0f * s;
-    DrawRectangleRounded({r.x + 3 * s, r.y + 4 * s, r.width, r.height}, roundness(r, rad), 8, kShadow);
+void panel(Rectangle r, float s, Color fill, Color edge, float radius) {
+    const float rad = radius * s;
+    const float line = std::max(1.0f, 1.2f * s);
+    DrawRectangleRounded({r.x, r.y + 4 * s, r.width, r.height}, roundness(r, rad), 8, kShadow);
     DrawRectangleRounded(r, roundness(r, rad), 8, edge);
-    const Rectangle in = inset(r, 2.0f * s);
-    DrawRectangleRounded(in, roundness(in, rad - 2 * s), 8, fill);
+    const Rectangle in = inset(r, line);
+    DrawRectangleRounded(in, roundness(in, rad - line), 8, fill);
 }
 
 void meter(Rectangle r, float frac, Color fill, float s, Color back) {
@@ -53,31 +56,41 @@ Color button_ink(Look look) {
     }
 }
 
+namespace {
+Color lighten(Color c, int by) {
+    return Color{static_cast<unsigned char>(std::min(255, c.r + by)), static_cast<unsigned char>(std::min(255, c.g + by)),
+                 static_cast<unsigned char>(std::min(255, c.b + by)), c.a};
+}
+}  // namespace
+
 Rectangle button(Rectangle r, const char* label, float s, Look look, bool hovered, float font_size) {
-    Color face{78, 72, 112, 255};
+    Color face = kRaised;
+    Color edge = kPanelEdge;
     const Color ink = button_ink(look);
     switch (look) {
         case Look::Normal: break;
-        case Look::Primary: face = Color{255, 196, 60, 255}; break;
-        case Look::Danger: face = kDanger; break;
-        case Look::Disabled: face = Color{58, 54, 80, 255}; break;
-        case Look::Toggled: face = kCyan; break;
+        case Look::Primary: face = edge = Color{255, 196, 60, 255}; break;
+        case Look::Danger: face = edge = kDanger; break;
+        case Look::Disabled: face = Color{22, 27, 46, 255}; edge = Color{34, 40, 66, 255}; break;
+        case Look::Toggled: face = edge = kCyan; break;
     }
-    if (hovered && look != Look::Disabled) {
-        face = Color{static_cast<unsigned char>(std::min(255, face.r + 22)),
-                     static_cast<unsigned char>(std::min(255, face.g + 22)),
-                     static_cast<unsigned char>(std::min(255, face.b + 22)), 255};
+    const bool live = hovered && look != Look::Disabled;
+    if (live) {
+        face = lighten(face, 18);
+        edge = lighten(edge, 40);
     }
+    // Flat and slim: a hairline edge and a soft drop shadow, lifting a touch
+    // under the pointer.
     const float rad = 10.0f * s;
-    const float lift = hovered && look != Look::Disabled ? 2.0f * s : 0.0f;
-    const Rectangle base{r.x, r.y + 4 * s, r.width, r.height - 4 * s};
-    const Rectangle top{r.x, r.y - lift, r.width, r.height - 4 * s};
-    DrawRectangleRounded(base, roundness(base, rad), 8, kOutline);
-    DrawRectangleRounded(top, roundness(top, rad), 8, kOutline);
-    const Rectangle in = inset(top, 2.0f * s);
-    DrawRectangleRounded(in, roundness(in, rad), 8, face);
+    const float line = std::max(1.0f, 1.2f * s);
+    const float lift = live ? 1.5f * s : 0.0f;
+    const Rectangle top{r.x, r.y - lift, r.width, r.height};
+    DrawRectangleRounded({r.x, r.y + 2.0f * s, r.width, r.height}, roundness(r, rad), 8, kShadow);
+    DrawRectangleRounded(top, roundness(top, rad), 8, edge);
+    const Rectangle in = inset(top, line);
+    DrawRectangleRounded(in, roundness(in, rad - line), 8, face);
     if (label && *label) {
-        const float size = font_size > 0.0f ? font_size : std::min(22.0f * s, top.height * 0.48f);
+        const float size = font_size > 0.0f ? font_size : std::min(22.0f * s, top.height * 0.46f);
         const float w = measure(label, size, Weight::Bold);
         text(label, top.x + (top.width - w) * 0.5f, top.y + (top.height - size) * 0.5f, size, ink, Weight::Bold);
     }
@@ -87,14 +100,10 @@ Rectangle button(Rectangle r, const char* label, float s, Look look, bool hovere
 void checkbox(Rectangle r, const char* label, bool checked, float s, bool hovered) {
     const float b = std::min(r.height, 28.0f * s);
     const Rectangle box{r.x, r.y + (r.height - b) * 0.5f, b, b};
-    DrawRectangleRounded(box, 0.3f, 6, kOutline);
-    const Rectangle in = inset(box, 2.5f * s);
-    Color fill = checked ? kCyan : Color{58, 54, 80, 255};
-    if (hovered) {
-        fill = Color{static_cast<unsigned char>(std::min(255, fill.r + 22)),
-                     static_cast<unsigned char>(std::min(255, fill.g + 22)),
-                     static_cast<unsigned char>(std::min(255, fill.b + 22)), 255};
-    }
+    DrawRectangleRounded(box, 0.3f, 6, checked ? kCyan : kPanelEdge);
+    const Rectangle in = inset(box, std::max(1.0f, 1.2f * s));
+    Color fill = checked ? kCyan : kRaised;
+    if (hovered) fill = lighten(fill, 22);
     DrawRectangleRounded(in, 0.3f, 6, fill);
     if (checked) {
         const float t = 3.5f * s;
@@ -202,7 +211,49 @@ void growing_outline(Rectangle r, float radius, float t, float thickness, Color 
 }
 
 void dim(int w, int h, unsigned char alpha) {
-    DrawRectangle(0, 0, w, h, Color{16, 14, 28, alpha});
+    DrawRectangle(0, 0, w, h, Color{6, 8, 16, alpha});
+}
+
+namespace {
+// An elliptical band from r0 to r1, its colour blending from c0 to c1.
+void band(Vector2 c, float r0, float r1, float squash, Color c0, Color c1) {
+    constexpr int kSegments = 72;
+    const auto at = [&](int i, float r) {
+        const float a = 2.0f * PI * static_cast<float>(i) / kSegments;
+        return Vector2{c.x + std::cos(a) * r, c.y + std::sin(a) * r * squash};
+    };
+    const auto put = [](Vector2 p, Color col) {
+        rlColor4ub(col.r, col.g, col.b, col.a);
+        rlVertex2f(p.x, p.y);
+    };
+    rlCheckRenderBatchLimit(kSegments * 6);
+    rlBegin(RL_TRIANGLES);
+    for (int i = 0; i < kSegments; ++i) {
+        // raylib's DrawRing winding, so the triangles face the camera.
+        put(at(i, r0), c0);
+        put(at(i + 1, r0), c0);
+        put(at(i, r1), c1);
+        put(at(i + 1, r0), c0);
+        put(at(i + 1, r1), c1);
+        put(at(i, r1), c1);
+    }
+    rlEnd();
+}
+}  // namespace
+
+void spotlight(Vector2 c, float r_clear, float r_dark, float squash, Color dark, int w, int h) {
+    const auto shade = [&](float k) {
+        Color col = dark;
+        col.a = static_cast<unsigned char>(dark.a * k);
+        return col;
+    };
+    const float span = r_dark - r_clear;
+    const float far = (std::hypot(static_cast<float>(w), static_cast<float>(h)) + r_dark) / std::max(squash, 0.2f);
+    // An eased falloff in three steps, then solid dark past every corner.
+    band(c, r_clear, r_clear + span * 0.35f, squash, shade(0.0f), shade(0.18f));
+    band(c, r_clear + span * 0.35f, r_clear + span * 0.7f, squash, shade(0.18f), shade(0.6f));
+    band(c, r_clear + span * 0.7f, r_dark, squash, shade(0.6f), shade(1.0f));
+    band(c, r_dark, far, squash, shade(1.0f), shade(1.0f));
 }
 
 }  // namespace wobo::ui

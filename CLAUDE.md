@@ -32,6 +32,7 @@ cmake --build build-web -j              # -> build-web/dist/index.{html,js,wasm}
 - The isometric camera is orthographic (yaw 45 deg, pitch 40 deg); `CameraRig` pans and zooms by unprojecting the ground point under the cursor.
 - `ToonShader` has GLSL 330 and GLSL 100 (WebGL) variants chosen from `rlGetVersion()`. Geometry is in world space; every lit face needs a normal. raylib's own cylinders and capsules set none, so use `rendering/primitives.h`. Front faces wind counter-clockwise; flat overlays drawn with the wrong winding are silently culled.
 - Wobo's outline is an inverted hull (front-face culling); `draw_xray` draws a silhouette with the depth test off, before the normal draw, so Wobo stays visible behind walls.
+- The look is "Night Shift": a flat dark background and, on the title screen only, a spotlight on Wobo. `GameApp::draw_world` ends 3D mode after the board, draws `ui::spotlight` in 2D, then resumes 3D for the overlays and Wobo; 2D drawing leaves the depth buffer alone, so walls still hide what they should. UI colours are in `ui/widgets.h`; the action and card colours there are deliberately shared and kept.
 - Map meshes are built once per map (`IsoRenderer::build`) with baked shadows; the raylib `::Material` type clashes with `wobo::Material`, so qualify it.
 
 ## Input gotcha

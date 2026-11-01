@@ -1,9 +1,11 @@
 #pragma once
 
-// The in-run heads-up display: day and survival time, Wobo's status (mood,
-// intent, its own confidence, and the referee's lock-on danger meter), the
-// energy meter, the action bar, active effects, toasts, the pause / play /
-// fast-forward buttons under the day clock, and the view controls.
+// The in-run heads-up display. One slim bar along the top holds the day clock
+// and time, the pause / play / fast-forward buttons, Wobo's status (mood,
+// intent, its own confidence, and the referee's lock-on outline) and the
+// help and menu buttons; on narrow screens the status drops to a second row.
+// Along the bottom: the energy meter and the action bar; plus active
+// effects and toasts.
 
 #include <string>
 #include <utility>
@@ -17,13 +19,21 @@ namespace wobo::ui {
 
 struct HudLayout {
     float s = 1.0f;
-    Rectangle day_panel{};
-    Rectangle pause{};          // these three sit in the day panel, under the clock
+    Rectangle bar{};            // the top strip; everything up to `menu` sits in it
+    bool two_rows = false;      // status on a second row (narrow screens)
+    Vector2 clock{};
+    float clock_r = 0.0f;
+    Rectangle day_panel{};      // clock plus day and time; hovering it tells when the draft is
+    Rectangle transport{};      // the well holding the three time buttons
+    Rectangle pause{};
     Rectangle play{};           // 1x
     Rectangle fast{};           // 2x
-    Rectangle status_panel{};
+    Rectangle status_panel{};   // Wobo's status; the lock-on outline runs round it
+    Rectangle mood{};           // inside status_panel: mood and what Wobo is doing
+    Rectangle confidence{};     // inside status_panel: confidence meter and best-guess line
     Rectangle help{};
     Rectangle menu{};
+    std::vector<float> dividers;  // x of the hairlines between groups on the top row
     Rectangle energy{};
     std::vector<std::pair<ActionId, Rectangle>> actions;
     Rectangle effects_origin{};

@@ -102,7 +102,7 @@ void IsoRenderer::build(const Map2D& map, const ToonShader& shader) {
     MeshBuilder lit;
     MeshBuilder marks;
     const float cs = map.cell_size();
-    const Color outline{40, 36, 52, 255};
+    const Color outline{14, 16, 30, 255};
     const float band = 0.035f;
 
     // Plinth: the board the map sits on.
@@ -110,8 +110,8 @@ void IsoRenderer::build(const Map2D& map, const ToonShader& shader) {
         const float pad = 0.12f;
         const float x0 = -pad, z0 = -pad, x1 = map.world_width() + pad, z1 = map.world_depth() + pad;
         const float y0 = -0.35f, y1 = -0.001f;
-        const Color side{92, 84, 110, 255};
-        lit.flat_rect(x0, z0, x1, z1, y1, prim::shade(side, 1.2f));
+        const Color side{30, 35, 60, 255};
+        lit.flat_rect(x0, z0, x1, z1, y1, Color{43, 49, 80, 255});
         lit.quad({x1, y0, z0}, {x1, y1, z0}, {x1, y1, z1}, {x1, y0, z1}, {1, 0, 0}, side);
         lit.quad({x1, y0, z1}, {x1, y1, z1}, {x0, y1, z1}, {x0, y0, z1}, {0, 0, 1}, side);
         lit.quad({x0, y0, z1}, {x0, y1, z1}, {x0, y1, z0}, {x0, y0, z0}, {-1, 0, 0}, side);

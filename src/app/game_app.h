@@ -49,6 +49,7 @@ private:
     float ui_scale() const;
     void load_progress();
     std::string best_text(const std::string& map_id) const;
+    std::string best_short(const std::string& map_id) const;  // for the title's map cards
 
     void start_run();
     void go_title();
@@ -69,6 +70,7 @@ private:
     void draw();
     void draw_world(const RunDirector& run, float alpha, bool overlays);
     void draw_bubble(const RunDirector& run, Vec2 pos);
+    void draw_spotlight(Vec2 at) const;
     void draw_lock_on(const RunDirector& run, const Pose2D& wobo);
     Pose2D render_pose(const RunDirector& run, float alpha) const;
     Face face_for(const RunDirector& run) const;

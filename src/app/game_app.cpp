@@ -114,6 +114,12 @@ std::string GameApp::best_text(const std::string& map_id) const {
     return "Best: lost until " + ui::survival_text(it->second.seconds, config_.get_float("run.day_length", 120.0f));
 }
 
+std::string GameApp::best_short(const std::string& map_id) const {
+    const auto it = best_.find(map_id);
+    if (it == best_.end()) return "Not played yet";
+    return "Best: " + ui::survival_text(it->second.seconds, config_.get_float("run.day_length", 120.0f));
+}
+
 // ---------------------------------------------------------------------------
 // Screens
 // ---------------------------------------------------------------------------
@@ -182,8 +188,10 @@ void GameApp::refit_camera(const RunDirector& run) {
     const int w = GetScreenWidth();
     const int h = GetScreenHeight();
     if (screen_ == Screen::Title) {
-        const ui::TitleLayout tl = ui::layout_title(w, h, ui_scale());
-        camera_.set_insets(0.24f, (h - tl.panel.y) / static_cast<float>(h));
+        const ui::TitleLayout tl = ui::layout_title(w, h, ui_scale(), static_cast<int>(maps_.size()));
+        // The wordmark only covers the top-left, so the board may tuck in
+        // beside it.
+        camera_.set_insets((tl.title.y + tl.title.height * 0.6f) / h, (h - tl.panel.y) / static_cast<float>(h));
     } else {
         const ui::HudLayout hud = ui::layout_hud(w, h, ui_scale(), run);
         camera_.set_insets(hud.top_inset, hud.bottom_inset);
@@ -300,13 +308,20 @@ void GameApp::update_title(float dt, const PointerFrame& in) {
         return;
     }
 
-    const ui::TitleLayout tl = ui::layout_title(w, h, s);
+    const ui::TitleLayout tl = ui::layout_title(w, h, s, static_cast<int>(maps_.size()));
+    const int n = static_cast<int>(maps_.size());
+    int pick = -1;
+    if (in.tap) {
+        for (int i = 0; i < static_cast<int>(tl.cards.size()); ++i) {
+            if (ui::contains(tl.cards[i], in.pos)) pick = i;
+        }
+    }
     int change = 0;
-    if ((in.tap && ui::contains(tl.prev, in.pos)) || in.key(KEY_LEFT)) change = -1;
-    if ((in.tap && ui::contains(tl.next, in.pos)) || in.key(KEY_RIGHT)) change = 1;
-    if (change != 0 && !maps_.empty()) {
-        const int n = static_cast<int>(maps_.size());
-        map_index_ = (map_index_ + change + n) % n;
+    if ((in.tap && tl.prev.width > 0.0f && ui::contains(tl.prev, in.pos)) || in.key(KEY_LEFT)) change = -1;
+    if ((in.tap && tl.next.width > 0.0f && ui::contains(tl.next, in.pos)) || in.key(KEY_RIGHT)) change = 1;
+    if (change != 0 && n > 0) pick = (map_index_ + change + n) % n;
+    if (pick >= 0 && pick < n && pick != map_index_) {
+        map_index_ = pick;
         restart_demo();
     }
     if ((in.tap && ui::contains(tl.play, in.pos)) || in.key(KEY_ENTER) || in.key(KEY_SPACE)) {
@@ -571,7 +586,18 @@ void GameApp::draw_world(const RunDirector& run, float alpha, bool overlays) {
     BeginMode3D(camera_.camera());
     toon_.begin();
     iso_.draw(toon_);
+    toon_.end();
+    EndMode3D();
 
+    // On the title, the room is dark but for a pool of light on Wobo (in
+    // play the whole board stays lit). It goes between the board and
+    // everything on it, so the overlays and Wobo stay bright; 2D drawing
+    // leaves the depth buffer alone, so the board still hides what it should
+    // once 3D resumes.
+    if (screen_ == Screen::Title) draw_spotlight(wobo.position());
+
+    BeginMode3D(camera_.camera());
+    toon_.begin();
     if (overlays) {
         toon_.set_flat(true);
         const auto* diag = agent.diagnostics();
@@ -641,6 +667,22 @@ void GameApp::draw_world(const RunDirector& run, float alpha, bool overlays) {
         if (alarm_ < 0.5f) draw_bubble(run, wobo.position());
     }
     fx_.draw_texts(camera_.camera(), ui_scale());
+}
+
+void GameApp::draw_spotlight(Vec2 at) const {
+    const Camera3D& cam = camera_.camera();
+    const Vector2 c = GetWorldToScreen({at.x, 0.0f, at.z}, cam);
+    // Measure a metre along both floor diagonals: the longer is the screen's
+    // horizontal scale, and their ratio is how squashed a floor circle looks.
+    constexpr float k = 0.70710678f;
+    const Vector2 a = GetWorldToScreen({at.x + k, 0.0f, at.z + k}, cam);
+    const Vector2 b = GetWorldToScreen({at.x + k, 0.0f, at.z - k}, cam);
+    const float la = std::hypot(a.x - c.x, a.y - c.y);
+    const float lb = std::hypot(b.x - c.x, b.y - c.y);
+    const float ppm = std::max(la, lb);
+    if (ppm <= 0.0f) return;
+    ui::spotlight(c, 1.8f * ppm, 6.0f * ppm, std::min(la, lb) / ppm, Color{12, 15, 29, 175}, GetScreenWidth(),
+                  GetScreenHeight());
 }
 
 void GameApp::draw_lock_on(const RunDirector& run, const Pose2D& wobo) {
@@ -733,7 +775,6 @@ void GameApp::draw() {
 
     BeginDrawing();
     ClearBackground(ui::kBackground);
-    DrawRectangleGradientV(0, 0, w, h, Color{92, 108, 150, 255}, Color{48, 52, 78, 255});
 
     switch (screen_) {
         case Screen::Title: {
@@ -741,8 +782,10 @@ void GameApp::draw() {
             if (show_help_) {
                 ui::draw_help(ui::layout_help(w, h, s), s, w, h, mouse);
             } else if (!maps_.empty()) {
-                const MapInfo& map = maps_[map_index_];
-                ui::draw_title(ui::layout_title(w, h, s), s, w, h, map, best_text(map.id), mouse, time_);
+                std::vector<std::string> bests;
+                for (const MapInfo& m : maps_) bests.push_back(best_short(m.id));
+                ui::draw_title(ui::layout_title(w, h, s, static_cast<int>(maps_.size())), s, w, h, maps_, map_index_,
+                               bests, mouse, time_);
             }
             break;
         }
@@ -765,7 +808,7 @@ void GameApp::draw() {
                 st.alarm = alarm_;
                 ui::draw_hud(hud, *run_, st);
                 if (sim_paused_ && !menu_open_ && !show_help_) {
-                    ui::text_centered("PAUSED", w * 0.5f, hud.status_panel.y + hud.status_panel.height + 52.0f * s,
+                    ui::text_centered("PAUSED", w * 0.5f, hud.bar.y + hud.bar.height + 64.0f * s,
                                       40.0f * s, ui::kInk, ui::Weight::Bold);
                 }
                 if (run_->phase() == RunPhase::Drafting) {

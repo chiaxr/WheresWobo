@@ -39,58 +39,102 @@ Color difficulty_colour(const std::string& d) {
     return kMuted;
 }
 
-// Title lettering with a chunky offset shadow.
-void title_text(const char* s, float cx, float y, float size, Color fill) {
-    const float o = size * 0.06f;
-    text_centered(s, cx + o, y + o, size, kOutline, Weight::Bold);
-    text_centered(s, cx, y, size, fill, Weight::Bold);
+void map_card(Rectangle r, float s, const MapInfo& map, const std::string& best, bool chosen, bool hovered) {
+    const float rad = 14.0f;
+    Color edge = kPanelEdge;
+    if (hovered && !chosen) edge = Color{70, 80, 124, 255};
+    panel(r, s, chosen ? Color{24, 32, 58, 245} : kPanel, edge, rad);
+    if (chosen) {
+        const float k = std::min(1.0f, 2.0f * rad * s / std::min(r.width, r.height));
+        DrawRectangleRoundedLinesEx(r, k, 8, 2.0f * s, kCyan);
+    }
+    const float pad = 14.0f * s;
+    const float tw = r.width - 2.0f * pad;
+    const auto name = wrap(map.name, 17.0f * s, tw, Weight::Bold);
+    text(name.empty() ? "" : name[0].c_str(), r.x + pad, r.y + pad - 2.0f * s, 17.0f * s, kInk, Weight::Bold);
+    if (!map.difficulty.empty()) {
+        const float dy = r.y + pad + 28.0f * s;
+        DrawCircleV({r.x + pad + 4.0f * s, dy + 7.0f * s}, 4.0f * s, difficulty_colour(map.difficulty));
+        text(map.difficulty.c_str(), r.x + pad + 14.0f * s, dy, 13.0f * s, kMuted);
+    }
+    const bool played = best.rfind("Best", 0) == 0;
+    const auto lines = wrap(best, 12.0f * s, tw);
+    text(lines.empty() ? "" : lines[0].c_str(), r.x + pad, r.y + r.height - pad - 12.0f * s, 12.0f * s,
+         played ? kEnergy : kMuted, played ? Weight::Bold : Weight::Regular);
 }
 
 }  // namespace
 
-TitleLayout layout_title(int w, int h, float s) {
+TitleLayout layout_title(int w, int h, float s, int map_count) {
     TitleLayout l;
-    const float pw = std::min(560.0f * s, w - 40.0f * s);
-    const float ph = 232.0f * s;
-    l.panel = {w * 0.5f - pw * 0.5f, h - ph - 26.0f * s, pw, ph};
-    const float ab = 46.0f * s;
-    l.prev = {l.panel.x + 14.0f * s, l.panel.y + 14.0f * s, ab, ab};
-    l.next = {l.panel.x + pw - ab - 14.0f * s, l.panel.y + 14.0f * s, ab, ab};
-    const float bw = 190.0f * s;
-    const float bh = 54.0f * s;
-    l.play = {w * 0.5f - bw - 8.0f * s, l.panel.y + ph - bh - 16.0f * s, bw, bh};
-    l.help = {w * 0.5f + 8.0f * s, l.panel.y + ph - bh - 16.0f * s, bw, bh};
+    const float m = 36.0f * s;
+    const float gap = 12.0f * s;
+    const float ch = 100.0f * s;
+    const float colw = 180.0f * s;
+    const float y = h - m - ch;
+    const int n = std::max(1, map_count);
+
+    l.play = {w - m - colw, y, colw, ch - 44.0f * s};
+    l.help = {l.play.x, y + ch - 36.0f * s, colw, 36.0f * s};
+    const float row = l.play.x - gap - m;
+    const float cw = (row - gap * (n - 1)) / n;
+    if (cw >= 128.0f * s) {
+        for (int i = 0; i < n; ++i) l.cards.push_back({m + i * (cw + gap), y, cw, ch});
+    } else {
+        const float ab = 44.0f * s;
+        l.prev = {m, y + (ch - ab) * 0.5f, ab, ab};
+        l.next = {l.play.x - gap - ab, l.prev.y, ab, ab};
+        l.card = {l.prev.x + ab + gap, y, l.next.x - gap - (l.prev.x + ab + gap), ch};
+    }
+    l.panel = {m, y - 52.0f * s, w - 2.0f * m, ch + 52.0f * s};
+
+    const float big = std::min(112.0f * s, w * 0.15f);
+    l.title = {m, 28.0f * s, w - 2.0f * m, big * 1.6f + 24.0f * s};
     return l;
 }
 
-void draw_title(const TitleLayout& l, float s, int w, int h, const MapInfo& map, const std::string& best,
-                Vector2 mouse, float time_s) {
+void draw_title(const TitleLayout& l, float s, int w, int h, const std::vector<MapInfo>& maps, int selected,
+                const std::vector<std::string>& bests, Vector2 mouse, float time_s) {
     (void)h;
-    const float bounce = std::sin(time_s * 2.2f) * 4.0f * s;
-    const float size = std::min(84.0f * s, w / 8.0f);
-    title_text("Where's Wobo?", w * 0.5f, 34.0f * s + bounce, size, kEnergy);
-    text_centered("Keep the robot lost for as long as you can.", w * 0.5f, 40.0f * s + size * 1.12f, 20.0f * s, kInk,
-                  Weight::Bold);
+    // Wordmark: a quiet "where's" over a big WOBO, its question mark bobbing.
+    const float big = std::min(112.0f * s, w * 0.15f);
+    const float small = big * 0.3f;
+    const float x = l.title.x;
+    float y = l.title.y;
+    text("where's", x + big * 0.03f, y, small, kMuted);
+    y += small * 0.95f;
+    text("WOBO", x, y, big, kInk, Weight::Bold);
+    const float bob = std::sin(time_s * 2.2f) * 3.0f * s;
+    text("?", x + measure("WOBO", big, Weight::Bold) + big * 0.02f, y + bob, big, kEnergy, Weight::Bold);
+    y += big * 1.02f;
+    text("You've kidnapped the robot. Keep it lost.", x + big * 0.03f, y, 16.0f * s, kMuted);
 
-    panel(l.panel, s);
-    button(l.prev, "<", s, Look::Normal, contains(l.prev, mouse));
-    button(l.next, ">", s, Look::Normal, contains(l.next, mouse));
-    const float cx = l.panel.x + l.panel.width * 0.5f;
-    text_centered(map.name.c_str(), cx, l.panel.y + 18.0f * s, 28.0f * s, kInk, Weight::Bold);
-    if (!map.difficulty.empty()) {
-        const float pw = measure(map.difficulty.c_str(), 14.0f * s, Weight::Bold) + 22.0f * s;
-        pill({cx - pw * 0.5f, l.panel.y + 54.0f * s, pw, 22.0f * s}, map.difficulty.c_str(),
-             difficulty_colour(map.difficulty), kOutline, s, 14.0f * s);
+    if (maps.empty()) return;
+    selected = std::clamp(selected, 0, static_cast<int>(maps.size()) - 1);
+    const auto best = [&](int i) { return i < static_cast<int>(bests.size()) ? bests[i] : std::string(); };
+
+    // The chosen map's description, just above the cards.
+    const float fs = 15.0f * s;
+    const Rectangle first = l.cards.empty() ? l.card : l.cards.front();
+    const auto lines = wrap(maps[selected].description, fs, l.play.x + l.play.width - l.panel.x);
+    float dy = first.y - 12.0f * s - fs * 1.3f * std::min<std::size_t>(lines.size(), 2);
+    for (std::size_t i = 0; i < lines.size() && i < 2; ++i) {
+        text(lines[i].c_str(), l.panel.x, dy, fs, kMuted);
+        dy += fs * 1.3f;
     }
-    const auto lines = wrap(map.description, 16.0f * s, l.panel.width - 48.0f * s);
-    float y = l.panel.y + 86.0f * s;
-    for (const auto& line : lines) {
-        text_centered(line.c_str(), cx, y, 16.0f * s, kMuted);
-        y += 20.0f * s;
+
+    if (!l.cards.empty()) {
+        for (std::size_t i = 0; i < l.cards.size() && i < maps.size(); ++i) {
+            map_card(l.cards[i], s, maps[i], best(static_cast<int>(i)), static_cast<int>(i) == selected,
+                     contains(l.cards[i], mouse));
+        }
+    } else {
+        button(l.prev, "<", s, Look::Normal, contains(l.prev, mouse));
+        button(l.next, ">", s, Look::Normal, contains(l.next, mouse));
+        map_card(l.card, s, maps[selected], best(selected), true, false);
     }
-    text_centered(best.c_str(), cx, l.play.y - 26.0f * s, 15.0f * s, kEnergy, Weight::Bold);
-    button(l.play, "PLAY", s, Look::Primary, contains(l.play, mouse), 24.0f * s);
-    button(l.help, "HOW TO PLAY", s, Look::Normal, contains(l.help, mouse), 18.0f * s);
+    button(l.play, "PLAY", s, Look::Primary, contains(l.play, mouse), 22.0f * s);
+    button(l.help, "How to play", s, Look::Normal, contains(l.help, mouse), 14.0f * s);
 }
 
 PauseLayout layout_pause(int w, int h, float s) {
