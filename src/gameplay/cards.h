@@ -25,6 +25,7 @@ struct CardDef {
     float weight = 1.0f;
     int max_stack = 1;
     std::string requires_action;  // action key that must be owned, or empty
+    std::string needs;            // a map trait it is only any use with (RunDirector::suits_map), or empty
     int min_hour = 1;
     std::vector<std::string> effects;
 };
@@ -64,6 +65,7 @@ std::vector<const CardDef*> CardDraftSystem::draw(int count, int hour, OwnedFn o
         if (taken(c.id) >= c.max_stack) continue;
         if (hour < c.min_hour) continue;
         if (!c.requires_action.empty() && (!owned(c.requires_action) || !suits(c.requires_action))) continue;
+        if (!c.needs.empty() && !suits(c.needs)) continue;
         // An ability card is pointless once its action is owned, or where
         // its action does nothing.
         bool pointless = false;

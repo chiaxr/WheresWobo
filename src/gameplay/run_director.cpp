@@ -51,6 +51,13 @@ bool RunDirector::start(const std::string& map_id, std::uint64_t seed, std::stri
     floor_label_ = label_floor(*map_, {}, radius);
     colour_matters_ = colourful_wall_share(*map_) >= config_.get_float("action.colour.min_colour_share", 0.1f);
     block_fits_ = barrier_fits_somewhere(*map_, floor_label_, 3, radius);
+    look_alikes_ = std::make_unique<LookAlikes>(*map_, LidarConfig::from(config_).max_range_m, radius);
+    repaint_fits_ = look_alikes_->colour_twin_share(config_.get_float("action.repaint.min_distance", 3.0f),
+                                                    config_.get_int("action.repaint.min_colour_beams", 4), 200) >=
+                    config_.get_float("action.repaint.min_twin_share", 0.1f);
+    repaint_.clear();
+    repaint_twin_cell_ = -1;
+    repaint_rng_.reseed(derive_seed(seed, "repaint"));
 
     Rng start_rng(derive_seed(seed, "start"));
     Pose2D start_pose = map_->sample_valid_pose(start_rng, radius);
@@ -111,6 +118,8 @@ void RunDirector::step() {
                     : 0.0f);
     energy_.step(dt, stats_, regen_mult);
     modifiers_ = actions_.modifiers(stats_);
+    if (!actions_.active(ActionId::Colour)) repaint_.clear();
+    modifiers_.repaint = repaint_;
 
     // Calibration: early on Wobo's sensors are noisier than their rating (and
     // its localizer does not know it); each hour they settle a little more.
@@ -163,6 +172,7 @@ void RunDirector::step() {
 bool RunDirector::suits_map(const std::string& action_key) const {
     if (action_key == "colour") return colour_matters_;
     if (action_key == "block") return block_fits_;
+    if (action_key == "repaint") return repaint_fits_;
     return true;
 }
 
@@ -185,6 +195,27 @@ float RunDirector::calibration_noise() const {
 ActivateResult RunDirector::can_activate(ActionId id) const {
     if (!sim_ || phase_ != RunPhase::Playing) return ActivateResult::Unavailable;
     return actions_.check(id, stats_, energy_, danger());
+}
+
+void RunDirector::maybe_repaint() {
+    const float chance = stats_.get("action.colour.repaint_chance", 0.0f);
+    if (chance <= 0.0f || !repaint_rng_.chance(chance)) return;
+    // From Wobo's true position: the painters work where it really is.
+    const int cell = look_alikes_->nearest_cell(sim_->true_pose().position());
+    LookAlikes::Twin twin;
+    if (!look_alikes_->colour_twin(cell, config_.get_float("action.repaint.min_distance", 3.0f),
+                                   config_.get_int("action.repaint.min_colour_beams", 4), &twin)) {
+        return;
+    }
+    repaint_ = look_alikes_->repaint(cell, twin);
+    repaint_twin_cell_ = twin.cell;
+    const Vec2 to = map_->cell_center(twin.cell % map_->width(), twin.cell / map_->width());
+    push({GameEvent::Type::Repainted, ActionId::Colour, sim_->true_pose(), {to.x, to.z, 0.0f}, "Repainting Works!"});
+}
+
+std::optional<Vec2> RunDirector::repaint_twin() const {
+    if (repaint_.empty() || repaint_twin_cell_ < 0) return std::nullopt;
+    return map_->cell_center(repaint_twin_cell_ % map_->width(), repaint_twin_cell_ / map_->width());
 }
 
 RoadBlock RunDirector::block_at(const Pose2D& target) const {
@@ -303,8 +334,12 @@ ActivateResult RunDirector::activate(ActionId id, std::optional<Pose2D> target) 
     } else if (id == ActionId::Block) {
         place_block(block_at(*target));
         e.to = {block_->centre.x, block_->centre.z, 0.0f};
+    } else if (id == ActionId::Colour) {
+        repaint_.clear();
+        repaint_twin_cell_ = -1;
     }
     push(std::move(e));
+    if (id == ActionId::Colour) maybe_repaint();
     return ActivateResult::Ok;
 }
 

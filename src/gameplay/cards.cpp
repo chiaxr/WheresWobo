@@ -34,6 +34,7 @@ std::vector<CardDef> parse_cards(const Config& cfg, std::string* error) {
         c.weight = cfg.get_float(p + "weight", 1.0f);
         c.max_stack = cfg.get_int(p + "max_stack", 1);
         c.requires_action = cfg.get_string(p + "requires");
+        c.needs = cfg.get_string(p + "needs");
         c.min_hour = cfg.get_int(p + "min_hour", 1);
         c.effects = cfg.get_all(p + "effect");
         out.push_back(std::move(c));

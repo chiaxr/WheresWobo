@@ -3,8 +3,10 @@
 // Player interventions. Each action attacks one part of Wobo's estimation
 // pipeline and nothing else: the LiDAR's reach (Smoke Bomb), the gyro's
 // heading (Gyro Jam), the wheels' distance count (Gummy Wheels, which also
-// slows Wobo down), the LiDAR's colour channel (Colour Blind), the world
-// itself (Road Block: an obstacle that is not on Wobo's map) or -- Kidnap --
+// slows Wobo down), the LiDAR (Colour Blind: its colours, and dead ahead;
+// with the Repainting Works upgrade, sometimes the colours of a look-alike
+// place instead -- see RunDirector), the world itself (Road Block:
+// an obstacle that is not on Wobo's map) or -- Kidnap --
 // the robot's true physical pose. Parameters come from RunStats, so cards
 // can change them mid-run. Internal keys ("range", "drift", ...) name the
 // data path, and stay stable while display names change.

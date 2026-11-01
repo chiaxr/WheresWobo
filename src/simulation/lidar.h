@@ -39,6 +39,8 @@ public:
     Rgb measure_colour(Rgb surface, Rng& rng, const SensorModifiers& mods) const;
 
 private:
+    Rgb measure_colour(Rgb surface, Rng& rng, const SensorModifiers& mods, bool repainted) const;
+
     LidarConfig config_;
 };
 

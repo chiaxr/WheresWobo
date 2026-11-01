@@ -298,6 +298,12 @@ void GameApp::handle_events(RunDirector& run, bool is_player_run) {
             case GameEvent::Type::BlockCleared:
                 fx_.poof(e.from.position(), ui::kRoadBlock);
                 break;
+            case GameEvent::Type::Repainted:
+                // A splash where Wobo is, and at the place its walls now pass for.
+                fx_.poof(at, ui::kBelief);
+                fx_.poof(e.to.position(), ui::kBelief);
+                fx_.float_text(e.to.position(), e.text, ui::kBelief);
+                break;
             case GameEvent::Type::HourEnded:
                 if (is_player_run) toast(e.text + " - pick a card!", ui::kGood);
                 break;

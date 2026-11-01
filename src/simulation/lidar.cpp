@@ -20,10 +20,14 @@ LidarConfig LidarConfig::from(const Config& cfg) {
 }
 
 Rgb RgbLidarSimulator::measure_colour(Rgb surface, Rng& rng, const SensorModifiers& mods) const {
+    return measure_colour(surface, rng, mods, false);
+}
+
+Rgb RgbLidarSimulator::measure_colour(Rgb surface, Rng& rng, const SensorModifiers& mods, bool repainted) const {
     float c[3] = {static_cast<float>(surface.r), static_cast<float>(surface.g),
                   static_cast<float>(surface.b)};
 
-    if (mods.colour_hue_shift > 0.0f) {
+    if (mods.colour_hue_shift > 0.0f && !repainted) {
         // Blend towards the channel-rotated colour: R<-G, G<-B, B<-R.
         const float t = clampf(mods.colour_hue_shift, 0.0f, 1.0f);
         const float r = c[0], g = c[1], b = c[2];
@@ -78,7 +82,9 @@ RgbLidarScan RgbLidarSimulator::scan(const Map2D& map, const Pose2D& true_pose, 
         const RayHit hit = cast_ray(map, origin.x, origin.z, origin.heading_rad + ret.angle_rad,
                                     scan.max_range_m);
 
-        if (!hit.hit || rng.chance(dropout)) {
+        const bool blinded = mods.blind_cone_rad > 0.0f && std::fabs(ret.angle_rad) < mods.blind_cone_rad &&
+                             rng.chance(mods.blind_chance);
+        if (!hit.hit || blinded || rng.chance(dropout)) {
             ret.hit = false;
             ret.range_m = scan.max_range_m;
             continue;
@@ -91,7 +97,8 @@ RgbLidarScan RgbLidarSimulator::scan(const Map2D& map, const Pose2D& true_pose, 
         }
         ret.hit = true;
         ret.range_m = measured;
-        ret.rgb = measure_colour(map.material(hit.material).rgb, rng, mods);
+        const std::uint8_t shown = hit.material < mods.repaint.size() ? mods.repaint[hit.material] : hit.material;
+        ret.rgb = measure_colour(map.material(shown).rgb, rng, mods, shown != hit.material);
     }
     return scan;
 }

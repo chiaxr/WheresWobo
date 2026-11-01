@@ -7,7 +7,7 @@
 // Used both to validate the robotics and to balance the game.
 //
 //   wobo_bench [--map ID|all] [--seeds N] [--seed FIRST] [--limit S] [--kidnap] [--player]
-//              [--study] [--localizer NAME] [--planner NAME] [--set key=value]...
+//              [--study [--only KEY,...]] [--localizer NAME] [--planner NAME] [--set key=value]...
 //              [--data DIR] [--csv] [--trace]
 //
 // --trace prints, every two simulated seconds of each run, the true pose,
@@ -19,6 +19,8 @@
 // estimate strays in the next 20 s, and how long until Wobo is found again.
 // "Spam": the action is used whenever it is off cooldown from the start;
 // how many runs Wobo still localizes in, and how long it takes.
+// --only limits it to some actions, by key (none, range, drift, kidnap,
+// colour, gummy, block, ...).
 
 #include <algorithm>
 #include <chrono>
@@ -255,7 +257,8 @@ StudyResult study_spam(const Config& cfg, const std::string& map, std::uint64_t 
 
 double median(std::vector<double> v);
 
-void run_study(const Config& base, const std::vector<std::string>& maps, int first_seed, int seeds, double limit_s) {
+void run_study(const Config& base, const std::vector<std::string>& maps, int first_seed, int seeds, double limit_s,
+               const std::string& only) {
     const Config cfg = study_config(base);
     const ActionId ids[] = {kNoAction, ActionId::Range, ActionId::Drift, ActionId::Gummy,
                             ActionId::Colour, ActionId::Block, ActionId::Kidnap};
@@ -263,6 +266,8 @@ void run_study(const Config& base, const std::vector<std::string>& maps, int fir
                 "spam ok", "median");
     for (const std::string& map : maps) {
         for (ActionId id : ids) {
+            const std::string key = id == kNoAction ? "none" : action_info(id).key;
+            if (!only.empty() && ("," + only + ",").find("," + key + ",") == std::string::npos) continue;
             int used = 0, broke = 0, spam_ok = 0;
             std::vector<double> refind, peak, spam;
             for (int s = first_seed; s < first_seed + seeds; ++s) {
@@ -305,6 +310,7 @@ int main(int argc, char** argv) {
     bool csv = false;
     bool trace = false;
     bool study = false;
+    std::string only;
     Config cfg = load_game_config();
 
     for (int i = 1; i < argc; ++i) {
@@ -321,6 +327,7 @@ int main(int argc, char** argv) {
         else if (a == "--csv") csv = true;
         else if (a == "--trace") trace = true;
         else if (a == "--study") study = true;
+        else if (a == "--only") only = next();
         else if (a == "--data") {
             data::set_override_dir(next());
             cfg = load_game_config();
@@ -342,7 +349,7 @@ int main(int argc, char** argv) {
     }
 
     if (study) {
-        run_study(cfg, maps, first_seed, seeds, limit_s);
+        run_study(cfg, maps, first_seed, seeds, limit_s, only);
         return 0;
     }
 

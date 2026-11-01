@@ -5,6 +5,9 @@
 // robot's true motion (teleport is separate and explicit). Defaults mean "no
 // interference".
 
+#include <cstdint>
+#include <vector>
+
 #include "core/types.h"
 
 namespace wobo {
@@ -17,6 +20,14 @@ struct SensorModifiers {
     float colour_desaturate = 0.0f;  // 0 = true colour, 1 = fully grey
     float colour_hue_shift = 0.0f;   // 0..1, rotates RGB channels towards (G, B, R)
     float dropout_add = 0.0f;        // extra probability a beam returns nothing
+    // A blind spot dead ahead: beams within this angle of Wobo's heading
+    // return nothing, each with `blind_chance`.
+    float blind_cone_rad = 0.0f;
+    float blind_chance = 0.0f;
+    // Repainting: the scanner reports the colour of material repaint[m]
+    // for a hit on material m (empty, or shorter than m: its own colour).
+    // A repainted surface reads true to its new colour: no hue shift.
+    std::vector<std::uint8_t> repaint;
     bool blackout = false;           // scanner produces no usable data
 
     // Ghost echoes: this fraction of beams report what the scanner would see

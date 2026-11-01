@@ -30,7 +30,7 @@ Each hour runs once round the clock beside the hour counter (one real minute at 
 | Smoke Bomb | Yes | A smoke cloud round Wobo cuts its LiDAR range to about a third |
 | Gyro Jam | Yes | Spins Wobo round; its heading goes wrong: turns are over- or under-read, and the gyro drifts while it moves. Distance stays true. The spin itself is visual only |
 | Gummy Wheels | Card | Bubblegum on the wheels: Wobo really slows to half speed, and its wheels slip, so it overestimates how far it went (and the distance noise grows). Heading stays true |
-| Colour Blind | Card | Red-green sunglasses: the LiDAR's colour channel reads washed-out, hue-shifted, noisy colours. Only offered on maps with colourful walls |
+| Colour Blind | Card | Red-green sunglasses: the LiDAR's colours are swapped round, and the shades are so dark Wobo is blind straight ahead (beams within 90° of its heading return nothing). Only offered on maps with colourful walls. Its Repainting Works upgrade gives each use a 25% chance (per stack) of calling the painters: for that use, the surfaces round Wobo read in the colours of a place elsewhere that is the same shape, so Wobo's scans fit there instead |
 | Road Block | Card | A 1.5 m barricade you place (drag to turn it) for 12 s. It is physically there, so the LiDAR sees it and Wobo bumps into it, but it is not on Wobo's map. It may not cut any floor off from the rest, or land on Wobo. Only offered on maps where it fits somewhere |
 | Kidnap | Card | A crane carries Wobo to a spot you pick (at least 2 m away). Wobo's software is told nothing |
 
@@ -56,16 +56,16 @@ Measured with `wobo_bench` and the shipped `game.cfg`. "Unaided" has no player: 
 
 | Map | For the player | Unaided | Kidnap: recovered, median | Scripted player lasts until |
 |---|---|---|---|---|
-| Dining Hall | Easy | 16/16, 28 s | 16/16, 25 s | hour 5–6 (median 285 s; hours 3–12; 6/32 survive) |
-| Art Gallery | Medium | 16/16, 36 s | 16/16, 21 s | hour 5 (median 259 s; hours 3–7; 3/32 survive) |
-| Barn | Medium | 16/16, 34 s | 16/16, 23 s | hour 4–5 (median 239 s; hours 2–7; 3/32 survive) |
-| Königsberg | Hard | 16/16, 44 s | 16/16, 19 s | hour 3 (median 174 s; hours 2–6; 3/32 survive) |
-| Office | Hard | 16/16, 35 s (mean 69 s) | 14/16, 34 s | hour 3 (median 148 s; hours 2–6; 2/32 survive) |
+| Dining Hall | Easy | 16/16, 28 s | 16/16, 25 s | hour 5–6 (median 300 s; hours 3–9; 6/32 survive) |
+| Barn | Medium | 16/16, 34 s | 16/16, 23 s | hour 5 (median 270 s; hours 2–13; 5/32 survive) |
+| Art Gallery | Medium | 16/16, 36 s | 16/16, 21 s | hour 5 (median 264 s; hours 3–8; 5/32 survive) |
+| Königsberg | Hard | 16/16, 44 s | 16/16, 19 s | hour 3–4 (median 181 s; hours 2–7; 5/32 survive) |
+| Office | Hard | 16/16, 35 s (mean 69 s) | 14/16, 34 s | hour 3 (median 169 s; hours 2–7; 3/32 survive) |
 
 Unaided, Wobo finds itself on every map. How quickly it does is a poor guide to how hard a map is for the player, because a map's look-alikes matter most once the player starts turning Wobo's belief:
 
 - **Dining Hall** is the easiest because twelve identical tables are twelve places to be wrong. A Gyro Jam on a near-lock lands Wobo on another table, typically 10 m away (12/12 locks broken in the study below), and Gyro Jam used whenever it is ready holds Wobo off for a median of 193 s.
-- **Art Gallery** and **Barn** are in the middle. The gallery's wings tell themselves apart by their furniture, and the guard gets in the way. The barn's twins are a long way off and each quarter has one tool left about in it, so a wrong guess is soon corrected (a Gyro Jam strays 0.4 m at worst). Road Block hurts most in the barn and the dining hall, which it doubles: both are rows of narrow gaps.
+- **Barn** and **Art Gallery** are in the middle, within a few seconds of each other. The gallery's wings tell themselves apart by their furniture, and the guard gets in the way. The barn's twins are a long way off and each quarter has one tool left about in it, so a wrong guess is soon corrected (a Gyro Jam strays 0.4 m at worst). Road Block hurts most in the barn and the dining hall, which it doubles: both are rows of narrow gaps.
 - **Königsberg** is the slowest map to localize on unaided (open squares, few walls in reach) but recovers fastest from a kidnap: no two places on the river look alike.
 - **Office** is the hardest. The offices are identical, but the floor is small (643 cells against 1100–1800 on the others) and the pantry and lift lobby mark the ends of the hallway, so there is little room to hide. It also has the longest tail: a wrong office can take minutes to correct, and 2/16 runs never recover from a kidnap.
 
@@ -86,11 +86,11 @@ Wobo's brain is two swappable parts: a **localizer** turns odometry and scans in
 
 The **goal navigator** is what stops a confidently wrong Wobo from stalling. A greedy planner whose belief has collapsed onto the wrong office (or the mirror image of the right one) sees nothing worth doing, because all its hypotheses predict the same scans. The navigator finds the estimate's look-alikes ("twins") by matching precomputed 360° views under every rotation, then follows a grid path to the place where the estimate and its twins would see the most different things, such as the end of the Office hallway or the one corner of the barn with the tractor in it. If the belief is wrong, the scans on the way stop fitting and the localizer recovers. Before the navigator, on earlier maps, unaided Wobo localized in 3/20 runs on a symmetric office block; with it, 19/20.
 
-Benchmarks on every map (`wobo_bench`, 16 seeds). "Unaided" is runs localized within 300 s, summed over the five maps, plus the range of the maps' median times. "Office, Barn" is the unaided count on the two most symmetric maps. "Kidnap" is runs that were teleported halfway through locking on and then re-localized (a run that never got that close counts as not recovered). "Player" is the median hour the scripted saboteur reached on Dining Hall, Art Gallery, Barn, Königsberg and Office (8 seeds; 32 for the default; 1500 s limit = hour 25). CPU is per simulated second, single-threaded on an Apple M5, measured with `info_gain`; the planner changes it little.
+Benchmarks on every map (`wobo_bench`, 16 seeds). "Unaided" is runs localized within 300 s, summed over the five maps, plus the range of the maps' median times. "Office, Barn" is the unaided count on the two most symmetric maps. "Kidnap" is runs that were teleported halfway through locking on and then re-localized (a run that never got that close counts as not recovered). "Player" is the median hour the scripted saboteur reached on Dining Hall, Art Gallery, Barn, Königsberg and Office (8 seeds; 32 for the default; 1500 s limit = hour 25; the other pairings were measured before the Colour Blind rework). CPU is per simulated second, single-threaded on an Apple M5, measured with `info_gain`; the planner changes it little.
 
 | Localizer + planner | Unaided (of 80) | Medians | Office, Barn | Kidnap recovered | Player reaches hour | CPU |
 |---|---|---|---|---|---|---|
-| particle + info_gain (default) | 80 | 28–44 s | 16/16, 16/16 | 78/80 | 5.5, 5, 4.5, 3, 3 | 2.7–3.4 ms |
+| particle + info_gain (default) | 80 | 28–44 s | 16/16, 16/16 | 78/80 | 5.5, 5, 5, 3.5, 3 | 2.7–3.4 ms |
 | particle + landmark_tour | 80 | 30–44 s | 16/16, 16/16 | 80/80 | 3.5, 7, 5, 2.5, 2 | |
 | particle + random_walk | 75 | 19–48 s | 12/16, 15/16 | 72/80 | 6, 5, 25, 25, 15 | |
 | histogram + info_gain | 80 | 10–23 s | 16/16, 16/16 | 77/80 | 2, 2, 2, 2, 1.5 | 9–23 ms |
@@ -113,11 +113,14 @@ What this shows:
 | Smoke Bomb | 2–9 s | 0.2–0.3 m | 74, 57, 48, 71, 58 s | Prevention only: reliably slows the search, useless against a lock |
 | Gyro Jam | 16–24 s, lock lost in 50/60 | 0.4 m (Barn, Office), 2.5 m (Königsberg), 6 m (Gallery), 10 m (Dining) | 193, 74, 133, 213, 112 s; only 35/60 runs localize at all | The strongest lock breaker short of Kidnap. A heading error turns the whole belief, and where there are look-alikes (twelve tables, five wings) Wobo lands on one |
 | Gummy Wheels | 7–18 s, lock lost in 45/60 | 0.3–0.7 m | 92, 59, 58, 66, 45 s | A softer, local version: stalls a lock without throwing Wobo far |
-| Colour Blind | 2–4 s | 0.2–0.3 m | 32, 33, 38, 42, 43 s | Barely matters on these maps: their props tell places apart by shape, so washing out colour costs Wobo at most 8 s |
+| Colour Blind | 2–19 s, lock lost in 30/60 | 0.2–0.3 m; 11 m in the Barn | 95, 62, 243, 61, 51 s; only 51/60 runs localize at all (5/12 in the Barn) | Blind ahead, Wobo drives into views it can't check, and swapped colours make a mirror twin fit better than the truth. Strongest in the symmetric Barn |
+| Colour Blind + Repainting Works (25%) | as Colour Blind | as Colour Blind | 81, 107, 206, 78, 51 s | Helps where shape-alike places differ in colour: the Art Gallery's wings (62 → 107 s), Königsberg (61 → 78 s). The Office's offices match in colour too, so it never fires there |
 | Road Block | 6–24 s, lock lost in 49/60 | 0.2–0.5 m | 63, 42, 61, 47, 30 s | Delays a lock without misleading it. Sustained use doubles the search where it closes a narrow gap (Dining Hall, Barn) |
 | Kidnap | 16–27 s, lock always lost | 13–19 m | (first use comes before Wobo has a lock) | Strongest by far, as its price says |
 
-Map suitability: the share of visible wall faces that are clearly coloured is 0.27 (Office) to 1.00 (Barn, all red barn walls), above `action.colour.min_colour_share` (0.1) everywhere, so Colour Blind is drawn on every map; and Road Block fits somewhere on every map. Both checks still run for any new map.
+Colour Blind used to wash colours out and add noise. That only hid colour, and since nearby guesses all lose the same amount it never moved Wobo's belief: 32–43 s, against 28–44 s with no action. A clean swap misleads instead, and the blind spot turns it from a colour trick into a real handicap.
+
+Map suitability: the share of visible wall faces that are clearly coloured is 0.27 (Office) to 1.00 (Barn, all red barn walls), above `action.colour.min_colour_share` (0.1) everywhere, so Colour Blind is drawn on every map; Road Block fits somewhere on every map; and Repainting Works needs places with a same-shape look-alike at least 3 m away that differs in colour on 4 of 32 directions, which 39% (Office) to 80% (Art Gallery) of places have, above `action.repaint.min_twin_share` (0.1). The checks still run for any new map.
 
 ## Performance
 
@@ -150,7 +153,7 @@ ctest --test-dir build --output-on-failure
 ./build/wobo_bench --player --limit 1500  # with a scripted saboteur
 ./build/wobo_bench --localizer histogram_filter --planner landmark_tour
 ./build/wobo_bench --map office --seed 3 --seeds 1 --trace   # follow one run
-./build/wobo_bench --study                # what each action does to the localizer
+./build/wobo_bench --study [--only colour,none]   # what each action does to the localizer
 
 # Frame-time profile, screenshots of every map, and the README poster and link-preview card
 ./build/WheresWobo --profile 6

@@ -15,7 +15,7 @@ const ActionInfo kActions[kActionCount] = {
     {ActionId::Kidnap, "kidnap", "Kidnap", "Physical position",
      "A crane carries Wobo somewhere else. Its software is not told.", true, true},
     {ActionId::Colour, "colour", "Colour Blind", "LiDAR colour",
-     "Red-green shades: the colours Wobo's scanner reports are washed out and swapped round.", false, false},
+     "Red-green shades: the colours Wobo's scanner reports are swapped round, and it can't see straight ahead.", false, false},
     {ActionId::Gummy, "gummy", "Gummy Wheels", "Wheel odometry",
      "Bubblegum on the wheels: Wobo crawls, and its wheels slip, so it thinks it has gone further than it has.",
      false, false},
@@ -174,6 +174,8 @@ SensorModifiers PlayerActionSystem::modifiers(const RunStats& stats) const {
         m.colour_desaturate = std::max(m.colour_desaturate, stats.get("action.colour.desaturate", 0.6f));
         m.colour_hue_shift = std::max(m.colour_hue_shift, stats.get("action.colour.hue_shift", 0.7f));
         m.colour_noise_add += stats.get("action.colour.noise", 20.0f);
+        m.blind_cone_rad = std::max(m.blind_cone_rad, stats.get("action.colour.blind_cone", 0.0f) * kDegToRad);
+        m.blind_chance = std::max(m.blind_chance, stats.get("action.colour.blind_chance", 1.0f));
     }
     return m;
 }

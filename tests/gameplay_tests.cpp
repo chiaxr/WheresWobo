@@ -1,5 +1,6 @@
 #include <cstdio>
 
+#include "gameplay/look_alikes.h"
 #include "gameplay/map_traits.h"
 #include "gameplay/run_director.h"
 #include "test.h"
@@ -95,7 +96,7 @@ TEST("actions: each action changes only its own data path") {
     const auto lidar_untouched = [&](const SensorModifiers& m) {
         return m.range_scale == 1.0f && m.range_noise_add == 0.0f && m.colour_noise_add == 0.0f &&
                m.colour_desaturate == 0.0f && m.colour_hue_shift == 0.0f && m.dropout_add == 0.0f &&
-               !m.blackout && m.ghost_fraction == 0.0f;
+               m.blind_cone_rad == 0.0f && m.repaint.empty() && !m.blackout && m.ghost_fraction == 0.0f;
     };
 
     const SensorModifiers range = run_one(ActionId::Range);
@@ -119,7 +120,9 @@ TEST("actions: each action changes only its own data path") {
     const SensorModifiers colour = run_one(ActionId::Colour);
     CHECK(odom_untouched(colour));
     CHECK(colour.range_scale == 1.0f);
-    CHECK(colour.colour_desaturate > 0.0f);
+    CHECK(colour.colour_hue_shift > 0.0f);
+    CHECK(colour.blind_cone_rad > 0.0f);  // and blind straight ahead
+    CHECK(colour.repaint.empty());        // only with the Repainting Works upgrade
 }
 
 TEST("referee: thresholds and stability window") {
@@ -287,9 +290,12 @@ TEST("map traits: reachability and colour on the shipped maps") {
         CHECK(components == 1);
         RunDirector run(load_game_config());
         REQUIRE(run.start(m.id, 1));
-        std::printf("    %-10s colourful wall share %.2f, colour card %s, road block fits %s\n", m.id.c_str(),
-                    colourful_wall_share(*map), run.suits_map("colour") ? "yes" : "no",
-                    run.suits_map("block") ? "yes" : "no");
+        const LookAlikes alikes(*map, 2.5f, radius);
+        std::printf("    %-10s colourful wall share %.2f, colour card %s, road block fits %s, colour twins %.2f, "
+                    "repaint card %s\n",
+                    m.id.c_str(), colourful_wall_share(*map), run.suits_map("colour") ? "yes" : "no",
+                    run.suits_map("block") ? "yes" : "no", alikes.colour_twin_share(3.0f, 4, 200),
+                    run.suits_map("repaint") ? "yes" : "no");
     }
     // The gallery is all about colour.
     CHECK(colourful_wall_share(*load_map("gallery")) > 0.3f);
@@ -359,6 +365,41 @@ TEST("road block: only in the world, never cutting the map, and it clears") {
     CHECK(!run.world().solid(20, 8));
 }
 
+TEST("repainting works: Colour Blind repaints Wobo's surroundings in a look-alike's colours") {
+    Config cfg = load_game_config();
+    cfg.set("action.colour.owned", "1");
+    cfg.set("action.colour.repaint_chance", "1");
+    cfg.set("referee.stability", "100000");  // keep Wobo lost: the run never ends
+    cfg.set("run.hour_length", "100000");
+    cfg.set("energy.start", "1000");
+    cfg.set("energy.capacity", "1000");
+    RunDirector run(cfg);
+    REQUIRE(run.start("gallery", 4));
+    int repainted = 0;
+    for (int i = 0; i < 40 * 30; ++i) {
+        if (run.can_activate(ActionId::Colour) == ActivateResult::Ok) {
+            REQUIRE(run.activate(ActionId::Colour) == ActivateResult::Ok);
+            if (const auto twin = run.repaint_twin()) {
+                ++repainted;
+                CHECK(distance(*twin, run.sim().true_pose().position()) >= 2.9f);
+                run.step();
+                // Something Wobo can see now reads in another material's colour.
+                const auto& table = run.modifiers().repaint;
+                int changed = 0;
+                for (std::size_t m = 0; m < table.size(); ++m) changed += table[m] != m ? 1 : 0;
+                CHECK(changed > 0);
+            }
+        }
+        run.step();
+    }
+    std::printf("    repainted on %d uses\n", repainted);
+    CHECK(repainted > 0);
+    // Off again once Colour Blind wears off.
+    for (int i = 0; i < 30 * 30 && run.actions().active(ActionId::Colour); ++i) run.step();
+    run.step();
+    CHECK(run.modifiers().repaint.empty());
+}
+
 TEST("cards: map-specific abilities are only offered where they work") {
     // Every shipped map has some colour, so raise the bar until the office
     // (blackboards and desks on grey plaster) falls short of it.
@@ -394,8 +435,8 @@ TEST("cards: map-specific abilities are only offered where they work") {
 }
 
 TEST("map traits: a barrier needs three floor cells in a row that nothing depends on") {
-    const std::vector<Material> mats = {Material{"wall", "Wall", Rgb{160, 160, 170}, true},
-                                        Material{"floor", "Floor", Rgb{230, 230, 220}, false}};
+    const std::vector<Material> mats = {Material{"wall", "Wall", Rgb{160, 160, 170}, true, 1.0f, Pattern::None, ""},
+                                        Material{"floor", "Floor", Rgb{230, 230, 220}, false, 1.0f, Pattern::None, ""}};
     // A staircase of floor: never three cells in a row, so nothing fits.
     const int n = 8;
     std::vector<std::uint8_t> stairs(n * n, 0);

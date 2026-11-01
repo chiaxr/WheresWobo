@@ -21,6 +21,7 @@
 #include "gameplay/actions.h"
 #include "gameplay/cards.h"
 #include "gameplay/energy.h"
+#include "gameplay/look_alikes.h"
 #include "gameplay/referee.h"
 #include "gameplay/run_stats.h"
 #include "robot/robot_agent.h"
@@ -33,7 +34,7 @@ namespace wobo {
 enum class RunPhase { Playing, Drafting, Over };
 
 struct GameEvent {
-    enum class Type { ActionUsed, Teleported, HourEnded, CardChosen, CloseCall, Localized, Spin, BlockCleared };
+    enum class Type { ActionUsed, Teleported, HourEnded, CardChosen, CloseCall, Localized, Spin, BlockCleared, Repainted };
     Type type;
     ActionId action = ActionId::Range;
     Pose2D from;
@@ -99,8 +100,10 @@ public:
     const Map2D& world() const { return *world_; }  // what is physically there
     const std::optional<RoadBlock>& road_block() const { return block_; }
     const std::vector<Mover>& movers() const { return movers_.movers(); }
-    // Whether an action's card can be offered on this map: Colour Blind needs
-    // colourful walls, and Road Block somewhere it fits.
+    // Whether a card can be offered on this map: Colour Blind needs colourful
+    // walls ("colour"), Road Block somewhere it fits ("block"), and Colour
+    // Blind's Repainting Works upgrade places of the same shape that differ
+    // in colour ("repaint").
     bool suits_map(const std::string& action_key) const;
     const WorldSimulation& sim() const { return *sim_; }
     const RobotAgent& agent() const { return *agent_; }
@@ -112,6 +115,9 @@ public:
     const std::vector<const CardDef*>& offer() const { return offer_; }
     const std::vector<std::string>& picked_cards() const { return picked_; }
     const SensorModifiers& modifiers() const { return modifiers_; }
+    // While a Colour Blind use has set Repainting Works off: the place (a
+    // cell centre) whose colours Wobo's surroundings now read in.
+    std::optional<Vec2> repaint_twin() const;
     const Config& config() const { return config_; }
     RunScore score() const;
 
@@ -134,6 +140,9 @@ private:
     void place_block(const RoadBlock& block);
     void clear_block();
     void apply_card(const CardDef& card);
+    // Repainting Works: roll its chance on a Colour Blind use, and if it
+    // comes up and somewhere else is Wobo's shape, repaint.
+    void maybe_repaint();
 
     Config config_;
     SimConfig sim_config_;
@@ -148,6 +157,11 @@ private:
     MoverSystem movers_;
     bool colour_matters_ = true;
     bool block_fits_ = true;
+    std::unique_ptr<LookAlikes> look_alikes_;
+    bool repaint_fits_ = true;
+    std::vector<std::uint8_t> repaint_;  // the active repaint's material table, empty for none
+    int repaint_twin_cell_ = -1;
+    Rng repaint_rng_;
     std::unique_ptr<WorldSimulation> sim_;
     std::unique_ptr<RobotAgent> agent_;
     MotionCommand command_;

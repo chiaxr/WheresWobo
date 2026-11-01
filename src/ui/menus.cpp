@@ -203,8 +203,8 @@ void draw_help(const HelpLayout& l, float s, int w, int h, Vector2 mouse) {
         {"Your actions",
          "Spend energy (it recharges) on interference. Smoke Bomb: a cloud around Wobo cuts its scanner "
          "range. Gyro Jam: spin Wobo round so its gyro loses track of which way it faces. From cards: "
-         "Gummy Wheels slows Wobo and makes its wheels overcount; Colour Blind's red-green shades scramble "
-         "the colours it sees; Road Block drops a barrier that isn't on its map; Kidnap has a crane drop it "
+         "Gummy Wheels slows Wobo and makes its wheels overcount; Colour Blind's red-green shades swap "
+         "the colours it sees round and leave it blind straight ahead; Road Block drops a barrier that isn't on its map; Kidnap has a crane drop it "
          "somewhere else without telling its software. Time them for when Wobo is about to see something telling.",
          kInk},
         {"Hours and cards",
