@@ -41,6 +41,9 @@ public:
     // that makes the view from `cell` read in the twin's colours. Materials
     // the twin agrees on keep their own colour.
     std::vector<std::uint8_t> repaint(int cell, const Twin& twin) const;
+    // Whether some cell within `radius` of `p` has a view nothing at least
+    // `min_distance` away matches: a place Wobo would know at a glance.
+    bool unique_nearby(Vec2 p, float radius, float min_distance) const;
     // Of `samples` cells spread over the map, the fraction with a colour twin.
     float colour_twin_share(float min_distance, int min_colour_beams, int samples) const;
 
@@ -56,6 +59,8 @@ private:
     std::vector<float> ranges_;       // [slot][beam]
     std::vector<float> sorted_;       // [slot][beam], ascending: a lower bound for any turn
     std::vector<int> materials_;      // [slot][beam], -1 for no hit
+    mutable std::vector<signed char> unique_;  // [slot]: -1 unknown, else whether it has no twin
+    mutable float unique_distance_ = -1.0f;    // the min_distance unique_ was found with
 };
 
 }  // namespace wobo

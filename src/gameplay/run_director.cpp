@@ -59,11 +59,23 @@ bool RunDirector::start(const std::string& map_id, std::uint64_t seed, std::stri
     repaint_twin_cell_ = -1;
     repaint_rng_.reseed(derive_seed(seed, "repaint"));
 
+    // Wobo starts clear of the movers, and away from places it would know at
+    // a glance (a hallway's dead end, say), where it finds itself before the
+    // player can do much. If no such start turns up, the first clear one.
     Rng start_rng(derive_seed(seed, "start"));
-    Pose2D start_pose = map_->sample_valid_pose(start_rng, radius);
-    for (int i = 0; i < 100 && !world_->valid_pose(start_pose, radius + 0.2f); ++i) {
-        start_pose = map_->sample_valid_pose(start_rng, radius);
+    const float unique_radius = config_.get_float("run.start_unique_radius", 0.0f);
+    const float twin_distance = config_.get_float("run.start_twin_distance", 2.0f);
+    std::optional<Pose2D> start;
+    std::optional<Pose2D> clear_start;
+    for (int i = 0; i < 100 && !start; ++i) {
+        const Pose2D p = map_->sample_valid_pose(start_rng, radius);
+        if (!world_->valid_pose(p, radius + 0.2f)) continue;
+        if (!clear_start) clear_start = p;
+        if (unique_radius <= 0.0f || !look_alikes_->unique_nearby(p.position(), unique_radius, twin_distance)) {
+            start = p;
+        }
     }
+    const Pose2D start_pose = start ? *start : clear_start ? *clear_start : map_->sample_valid_pose(start_rng, radius);
     sim_ = std::make_unique<WorldSimulation>(*world_, sim_config_, seed, start_pose);
 
     // The prior is what the robot knows: by default nothing (uniform).

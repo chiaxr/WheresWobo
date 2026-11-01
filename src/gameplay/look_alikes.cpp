@@ -166,6 +166,26 @@ std::vector<std::uint8_t> LookAlikes::repaint(int cell, const Twin& twin) const 
     return table;
 }
 
+bool LookAlikes::unique_nearby(Vec2 p, float radius, float min_distance) const {
+    if (unique_distance_ != min_distance) {
+        unique_.assign(cells_.size(), -1);
+        unique_distance_ = min_distance;
+    }
+    const int w = map_->width();
+    const int reach = static_cast<int>(std::ceil(radius / map_->cell_size()));
+    const int cx = map_->cell_x(p.x);
+    const int cz = map_->cell_z(p.z);
+    for (int z = std::max(0, cz - reach); z <= std::min(map_->height() - 1, cz + reach); ++z) {
+        for (int x = std::max(0, cx - reach); x <= std::min(w - 1, cx + reach); ++x) {
+            const int slot = slot_[z * w + x];
+            if (slot < 0 || distance(map_->cell_center(x, z), p) > radius) continue;
+            if (unique_[slot] < 0) unique_[slot] = twins(z * w + x, min_distance, 1).empty() ? 1 : 0;
+            if (unique_[slot] > 0) return true;
+        }
+    }
+    return false;
+}
+
 float LookAlikes::colour_twin_share(float min_distance, int min_colour_beams, int samples) const {
     if (cells_.empty() || samples <= 0) return 0.0f;
     const int step = std::max(1, static_cast<int>(cells_.size()) / samples);

@@ -482,3 +482,27 @@ TEST("run: the day ends after its last hour, with Wobo still lost") {
     CHECK(sc.hour == 3);
     CHECK(std::fabs(sc.survival_s - 15.0) < 0.1);
 }
+
+TEST("run: Wobo never starts beside a place it would know at a glance") {
+    const Config cfg = load_game_config();
+    const float radius = cfg.get_float("robot.radius", 0.2f);
+    const float unique_radius = cfg.get_float("run.start_unique_radius", 0.0f);
+    const float twin_distance = cfg.get_float("run.start_twin_distance", 2.0f);
+    REQUIRE(unique_radius > 0.0f);
+    const auto map = load_map("office");
+    REQUIRE(map.has_value());
+    const LookAlikes alikes(*map, 2.5f, radius);
+    Config anywhere = cfg;
+    anywhere.set("run.start_unique_radius", "0");
+    int unfiltered_unique = 0;
+    for (std::uint64_t seed = 1; seed <= 24; ++seed) {
+        RunDirector run(cfg);
+        REQUIRE(run.start("office", seed));
+        CHECK(!alikes.unique_nearby(run.sim().true_pose().position(), unique_radius, twin_distance));
+        RunDirector free_run(anywhere);
+        REQUIRE(free_run.start("office", seed));
+        unfiltered_unique += alikes.unique_nearby(free_run.sim().true_pose().position(), unique_radius, twin_distance);
+    }
+    // Without the rule, the office's dead ends do come up.
+    CHECK(unfiltered_unique > 0);
+}
