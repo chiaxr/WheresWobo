@@ -2,8 +2,7 @@
 
 // Player interventions. Each action attacks one part of Wobo's estimation
 // pipeline and nothing else: the LiDAR's reach (Smoke Bomb), the gyro's
-// heading (Gyro Jam), the wheels' distance count (Gummy Wheels, which also
-// slows Wobo down), the LiDAR (Colour Blind: its colours, and dead ahead;
+// heading (Gyro Jam), the wheels' distance count (Gummy Wheels), the LiDAR (Colour Blind: its colours, and dead ahead;
 // with the Repainting Works upgrade, sometimes the colours of a look-alike
 // place instead -- see RunDirector), the world itself (Road Block:
 // an obstacle that is not on Wobo's map), its onboard computer (Overload:
@@ -74,8 +73,6 @@ public:
 
     // The measurement-path changes all active effects add up to.
     SensorModifiers modifiers(const RunStats& stats) const;
-    // Gummy Wheels' physical slow-down: a multiplier on Wobo's forward speed.
-    float speed_scale(const RunStats& stats) const;
 
     const ActionState& state(ActionId id) const { return states_[static_cast<int>(id)]; }
     bool active(ActionId id) const { return state(id).active_left > 0.0f; }

@@ -36,7 +36,7 @@ The results screen shows how long you lasted, e.g. "Lost until Hour 3, 42 min", 
 |---|---|---|
 | Smoke Bomb | Yes | A smoke cloud round Wobo cuts its LiDAR range to about a third |
 | Gyro Jam | Yes | Spins Wobo round; its heading goes wrong: turns are over- or under-read, and the gyro drifts while it moves. Distance stays true. The spin itself is visual only |
-| Gummy Wheels | Card | Bubblegum on the wheels: Wobo really slows to half speed, and its wheels slip, so it overestimates how far it went (and the distance noise grows). Heading stays true |
+| Gummy Wheels | Card | Bubblegum on the wheels: they slip, so Wobo overestimates how far it went (and the distance noise grows). Heading stays true. It used to slow Wobo to half speed as well, but a slower Wobo takes more scans per metre and found itself sooner |
 | Colour Blind | Card | Red-green sunglasses: the LiDAR's colours are swapped round, and the shades are so dark Wobo is blind straight ahead (beams within 90° of its heading return nothing). Only offered on maps with colourful walls. Its Repainting Works upgrade gives each use a 25% chance (per stack) of calling the painters: for that use, the surfaces round Wobo read in the colours of a place elsewhere that is the same shape, so Wobo's scans fit there instead |
 | Road Block | Card | A 1.5 m barricade you place (drag to turn it) for 12 s. It is physically there, so the LiDAR sees it and Wobo bumps into it, but it is not on Wobo's map. It may not cut any floor off from the rest, or land on Wobo. Only offered on maps where it fits somewhere |
 | Overload | Card | A power surge fries Wobo's onboard computer for 4 s. Its localizer is capped at 10% of its compute (250 particles, so it forgets most of the places it was weighing up) and reads a scan only once every 4 s, so its estimate goes stale while it drives. Its sensors are untouched |
@@ -65,24 +65,51 @@ Measured with `wobo_bench` and the shipped `game.cfg` (16 seeds per map unaided,
 
 - **Weak** drafts at random and, about every other second, presses any ability that is ready, Kidnap included, whatever Wobo is doing.
 - **Medium** keeps every ability it can afford running all the time and saves Kidnap, to a random spot, for the lock-on alarm.
-- **Strong** plays like Medium but drafts by a priority list (Kidnap and its upgrades, Gyro Jam, Overload, energy, Magnet), favours the stronger effects, Kidnaps Wobo to the spot farthest from its guess, and saves Overload, then Magnet, for a lock-on alarm that Kidnap can't answer. Both Medium and Strong put a Magnet where it drags Wobo farthest.
+- **Strong** plays like Medium but drafts by a priority list measured from what each card is worth to it (energy and Gyro Jam's upgrades first; see below), Kidnaps Wobo to the spot farthest from its guess, and saves Overload, then Magnet, for a lock-on alarm that Kidnap can't answer. Both Medium and Strong put a Magnet where it drags Wobo farthest.
 
 | Map | For the player | Unaided | Kidnap: recovered, median | Weak | Medium | Strong |
 |---|---|---|---|---|---|---|
-| Barn | Medium | 16/16, 159 s | 16/16, 74 s | hour 7.5 (5–11; 3/32) | hour 7.5 (5–12; 5/32) | hour 10 (6–end; 11/32) |
-| Art Gallery | Medium | 16/16, 158 s | 16/16, 61 s | hour 6 (4–10; 1/32) | hour 6 (5–10; 4/32) | hour 7 (5–11; 5/32) |
-| Dining Hall | Medium | 16/16, 154 s | 16/16, 51 s | hour 6 (5–10; 2/32) | hour 6.5 (5–19.5; 7/32) | hour 10 (5–end; 13/32) |
-| Königsberg | Hard | 16/16, 147 s | 16/16, 70 s | hour 4 (4–5; 0/32) | hour 5.5 (4–7; 2/32) | hour 6 (4–8; 5/32) |
-| Office | Hard | 13/16, 158 s | 9/16, 61 s | hour 5.5 (3–9; 2/32) | hour 6 (4–11; 4/32) | hour 5.5 (4–10.5; 2/32) |
+| Barn | Medium | 16/16, 159 s | 16/16, 74 s | hour 8 (6–13.5; 1/32) | hour 7 (6–15.5; 6/32) | end (10.5–end; 23/32) |
+| Art Gallery | Medium | 16/16, 158 s | 16/16, 61 s | hour 5.5 (4–8; 1/32) | hour 7.5 (5–14; 5/32) | end (7–end; 18/32) |
+| Dining Hall | Medium | 16/16, 154 s | 16/16, 51 s | hour 8.5 (5.5–20.5; 5/32) | hour 6 (5–12; 4/32) | end (6.5–end; 21/32) |
+| Königsberg | Hard | 16/16, 147 s | 16/16, 70 s | hour 5 (4–6; 0/32) | hour 6.5 (5–9; 2/32) | hour 6 (5–end; 8/32) |
+| Office | Hard | 13/16, 158 s | 9/16, 61 s | hour 6.5 (4–9.5; 2/32) | hour 6 (4–9; 4/32) | hour 9.5 (5–end; 11/32) |
 
-Over all five maps the weak, medium and strong players reach a median of hour 6, 6 and 7; 66%, 63% and 51% of their runs end between hours 5 and 15, and 5%, 14% and 22% keep Wobo lost all day. Unaided, Wobo spends its slow first hours gathering evidence and finds itself in hour 3, at 147–159 s, on every map.
+Over all five maps the weak and medium players reach a median of hour 6 and 6.5, and the strong player's median run lasts the day; 61%, 63% and 34% of their runs end between hours 5 and 15, 28%, 19% and 14% are over by hour 4, and 6%, 13% and 51% keep Wobo lost all day. Unaided, Wobo spends its slow first hours gathering evidence and finds itself in hour 3, at 147–159 s, on every map.
 
 Wobo never starts within 1 m of a place that nothing else on the map looks like by shape (`run.start_unique_radius`), such as the dead ends of the Office hallway. From there it had a confident, correct guess in a median of 67 s, against 165 s from anywhere else in the Office (64 seeds, unaided). The rule rules out about half the Office's floor and 9–42% of the other maps'; with it, unaided Wobo takes 185 s rather than 134 s to find itself in the Office, and the others barely change.
 
-- **The Barn** is the player's best map. Its half-turn symmetry gives a Gyro Jam or a Road Block a mirror twin to send Wobo's belief to (see the study below); 11 of the strong player's 32 runs there go the distance.
+- **The Barn** is the player's best map. Its half-turn symmetry gives a Gyro Jam or a Road Block a mirror twin to send Wobo's belief to (see the study below); 23 of the strong player's 32 runs there go the distance.
 - **Art Gallery and Dining Hall** are within noise of each other.
 - **Königsberg and the Office** are harder. Königsberg has no two places alike, so every start is soon told apart. The Office floor is small (643 cells against 1100–1800 on the others) and the pantry and lift lobby mark the ends of its hallway, so there is little room to hide, though a wrong office can take minutes to correct (7/16 runs never recover from a kidnap within 300 s).
-- **Skill buys less than it should.** Keeping everything running is close to the best play; a first strong player that held energy back for Kidnap did worse than Medium. Overload is the one ability that rewards timing: saved for the lock-on alarm, it lifts the strong player's whole-day wins from 15% to 22% (32 seeds per map, with and without the card in the draft), mostly on the Art Gallery, Dining Hall and Königsberg, while the weak and medium players, who fire it whenever it is ready, barely change (7% to 8%, 14% to 16%). Magnet breaks a lock as surely, and at first it cost 35 energy and recharged in 15 s: the strong player's whole-day wins went from 22% to 34%, and a shorter reach (3.5 m) hardly helped (33%). At 50 and 25 s its whole-day wins stay at 22%. Adding any card costs a little on its own, since it reshuffles every draft: with Magnet in the deck but unaffordable, the strong player kept Wobo lost all day in 16% of runs, and 26% of runs were over by hour 4 (17% without the card), against 22% and 24% with a working Magnet.
+- **Skill pays in the draft.** A player who keeps everything running is always short of energy (about 3.7 a second wanted against 3 regenerated), so what a card does per point of energy matters more than what an ability does to Wobo per use. Holding energy back measured worse: a strong player that kept 30 in reserve for the lock-on alarm kept Wobo lost all day in 15% of runs, against 22%. The draft is where skill tells: drafting by the measured values below rather than by the `--study` ranking (Kidnap first) lifted the strong player's whole-day wins from 22% to 43% before the re-pricing below, and to 51% after it, while the weak player, drafting at random, stays at 5–6%.
+- **Overload and Magnet** were tuned with the earlier strong player (Kidnap first). Saved for the lock-on alarm, Overload lifted its whole-day wins from 15% to 22% (32 seeds per map, with and without the card in the draft), while the weak and medium players, who fire it whenever it is ready, barely changed (7% to 8%, 14% to 16%). Magnet at 35 energy and a 15 s cooldown lifted them from 22% to 34%, and a shorter reach (3.5 m) hardly helped (33%); at 50 and 25 s they stayed at 22%. Adding any card costs a little on its own, since it reshuffles every draft: with Magnet in the deck but unaffordable, the strong player kept Wobo lost all day in 16% of runs, and 26% of runs were over by hour 4 (17% without the card), against 22% and 24% with a working Magnet.
+
+#### What a card is worth
+
+Each card given to a player at the start of a run (by `--set`, 32 seeds per map, 160 runs; noise is about ±4 points, and up to ±6 from reshuffled drafts), measured before the re-pricing, with the earlier strong player. Kept lost all day, and over by hour 4:
+
+| Card | Strong | Medium | Note |
+|---|---|---|---|
+| (none) | 22%, 24% | 14%, 21% | |
+| Overclock | 50%, 16% | 26%, 17% | Always on for a busy player, so +50% regen, twice Solar Panel. Now +25%: 38%, 16% |
+| Vertigo | 42%, 9% | 26%, 18% | |
+| Solar Panel | 39%, 17% | 20%, 21% | |
+| Magnet | 38%, 10% | 16%, 17% | |
+| Long Spin | 38%, 18% | 22%, 18% | |
+| Supercapacitor | 36%, 15% | 15%, 18% | |
+| Colour Blind | 35%, 12% | 16%, 16% | |
+| Lingering Smoke | 33%, 16% | 19%, 21% | Smoke Bomb still earns its energy mid-run: stopping it from hour 3 or 4 changed nothing (24%, 20%) |
+| Chain Reaction | 24%, 16% | 20%, 20% | |
+| Head Spin | 22%, 21% | 18%, 22% | |
+| Spare Battery | 21%, 24% | 12%, 21% | |
+| Overload | 19%, 14% | 11%, 29% | Rewards timing: fired whenever ready it costs the medium player runs |
+| Thick Fog | 17%, 18% | 12%, 26% | |
+| Road Block | 16%, 23% | 14%, 21% | |
+| Kidnap | 15%, 14% | 17%, 19% | At 70 energy, and the old strong player then drafted its four support cards first. Now 50: 31%, 13% (medium 21%, 18%) |
+| Gummy Wheels | 10%, 32% | 6%, 39% | It slowed Wobo, which then took more scans per metre and found itself sooner. Without the slow-down: 19%, 21% (medium 16%, 31%) |
+
+The starting kit stays: Smoke Bomb's bite is early, and handing the player a third ability (Magnet, Overload or Kidnap) cuts the strong player's early losses by about 10 points but lifts its wins with them. Most runs that end early end in hours 3–5, as Wobo's compute passes 100%; that is Wobo's curve, not the draft.
 
 ### Tuning the difficulty curve
 
@@ -150,14 +177,14 @@ What this shows:
 | (none) | 2–4 s; the lock slips on its own in 22/60 runs | 0.1 m | 29, 28, 46, 41, 37 s | |
 | Smoke Bomb | 2 s | 0.1 m | 28, 19, 29, 21, 32 s | No effect late: reading only nearby walls, Wobo if anything localizes sooner. Its bite is early, against noisy sensors and little compute |
 | Gyro Jam | 12–16 s, lock lost in 48/60 | 0.2–0.6 m; 11 m in the Barn | 36, 34, 37, 36, 19 s | Still the surest lock breaker short of Kidnap, and in the Barn it sends the belief to the mirror twin. Alone it no longer holds a late Wobo off: reading every beam, it re-anchors its heading within seconds |
-| Gummy Wheels | 2–4 s | 0.2 m | 31, 30, 34, 32, 28 s (11/12 in the Office) | Mostly piles onto early noise |
+| Gummy Wheels | 6–9 s | 0.3–0.4 m | 20, 31, 35, 31, 108 s (none in the same run: 29, 27, 42, 31, 63 s) | A small delay, and a real one in the Office. While it also slowed Wobo it did less (2–4 s), since a slower Wobo takes more scans per metre |
 | Colour Blind | 2–6 s | 0.2 m | 34, 35, 36, 22, 26 s | A small delay |
 | Road Block | 6–13 s, lock lost in 38/60 | 7–9 m in the Barn and Königsberg, 0.1–0.3 m elsewhere | 80, 32, 51, 54, 32 s (11/12 in the Office) | The best to repeat late. A wall that is not on Wobo's map is evidence its software cannot explain away, and where it blocks the way Wobo takes itself for somewhere else |
 | Overload | 9–11 s, lock lost in 78/80 | 0.7–1.1 m | 52, 34, 39, 49, 58 s (16 seeds; none: 29, 27, 40, 29, 63 s) | The cheap lock breaker. Reading a scan once in 4 s, Wobo's estimate trails it as it drives, so a lock almost never survives, but Wobo is back on it seconds after the power returns. Cut to 100 particles instead of 250, it handed Wobo a fresh start: used whenever ready it then sped Wobo up in the Office (62 to 37 s) |
-| Magnet | 14–32 s; lock always lost | 11–16 m | 45, 30, 46, 30, 49 s (16 seeds) | As sure a lock breaker as Kidnap. Dragged across the floor while its wheels say it stood still, Wobo's belief smears and then jumps somewhere else. The reach hardly matters: a 2.5 m reach also broke every lock (13–23 s), except in the Office hallway, where 5 m keeps Wobo lost for 32 s against 13 s. Hence its price, near Kidnap's |
-| Kidnap | 9–15 s, 67 s in the Office; lock always lost | 14–19 m | (first use comes before Wobo has a lock) | Strongest by far, as its price says |
+| Magnet | 14–32 s; lock always lost | 11–16 m | 45, 30, 46, 30, 49 s (16 seeds) | As sure a lock breaker as Kidnap. Dragged across the floor while its wheels say it stood still, Wobo's belief smears and then jumps somewhere else. The reach hardly matters: a 2.5 m reach also broke every lock (13–23 s), except in the Office hallway, where 5 m keeps Wobo lost for 32 s against 13 s. Hence its price, the same as Kidnap's |
+| Kidnap | 9–15 s, 67 s in the Office; lock always lost | 14–19 m | (first use comes before Wobo has a lock) | Strongest by far per use. In a run it is another matter (see the card values above): at 70 energy it bought the fewest seconds per energy of any action, and drafting it early lost runs, so it now costs 50 |
 
-At final compute, no action used on its own holds Wobo off for long: used whenever ready, each still lets it localize within 19–80 s. What carries a late run is stacking them, which is also why runs that last tend to last forever (see the difficulty curve above). Against hour-1 noise, used whenever ready, Smoke Bomb held Wobo off for 48–74 s and Gummy Wheels for 45–92 s. Repainting Works was measured at 100% compute: no gain on Colour Blind against a full-strength Wobo, but against hour-1 Wobo it lifted the Art Gallery from 62 to 107 s.
+At final compute, no action used on its own holds Wobo off for long: used whenever ready, each still lets it localize within 19–80 s. What carries a late run is stacking them, which is also why runs that last tend to last forever (see the difficulty curve above). Against hour-1 noise, used whenever ready, Smoke Bomb held Wobo off for 48–74 s and Gummy Wheels, which then also slowed Wobo down, for 45–92 s. Repainting Works was measured at 100% compute: no gain on Colour Blind against a full-strength Wobo, but against hour-1 Wobo it lifted the Art Gallery from 62 to 107 s.
 
 Colour Blind used to wash colours out and add noise. That only hid colour, and since nearby guesses all lose the same amount it never moved Wobo's belief (32–43 s against hour-1 Wobo, 28–44 s with no action). A clean swap misleads instead, and the blind spot turns it from a colour trick into a real handicap.
 
@@ -233,7 +260,7 @@ tests/, tools/      unit tests, headless benchmark, map generator
 ```
 
 - **Replacing the localizer or planner:** implement `ILocalizer` / `IActivePlanner`, add an entry to `localizer_registry.cpp` / `planner_registry.cpp`, and select it with `localizer.type` / `planner.type` in `game.cfg` (or `wobo_bench --localizer NAME`). Diagnostics such as particles are optional; the planner and UI fall back to a point estimate.
-- **Player actions** only change `SensorModifiers` (the measurement paths). The exceptions tell the robot nothing: Kidnap moves the true pose, Gummy Wheels slows the wheels, Road Block puts a barrier only in the physical world, Magnet drags Wobo across the floor after its odometry has been measured (`ExternalPull` in `WorldSimulation::step`), and Overload caps the compute budget `RunDirector` gives Wobo's localizer, the channel its hourly warm-up uses.
+- **Player actions** only change `SensorModifiers` (the measurement paths). The exceptions tell the robot nothing: Kidnap moves the true pose, Road Block puts a barrier only in the physical world, Magnet drags Wobo across the floor after its odometry has been measured (`ExternalPull` in `WorldSimulation::step`), and Overload caps the compute budget `RunDirector` gives Wobo's localizer, the channel its hourly warm-up uses.
 - **Maps** are a folder each, `data/maps/<id>/map.txt`: a grid of materials, props placed off the grid (`kind x z key=value`, with exact circle and box footprints), and movers. The format is documented in `src/world/map_loader.h`. Movers exist only in the physical world, never in the map Wobo localizes against.
 - **Data** (`data/`) is embedded at build time by `cmake/EmbedFiles.cmake`, so desktop and web read identical bytes. Editing a map, card or config triggers a rebuild.
 
@@ -266,7 +293,7 @@ tests/, tools/      unit tests, headless benchmark, map generator
    - whether it is aimed at a spot on the map;
    - whether it is instant.
 2. **Tune it** in a `[action.<key>]` section of `data/configs/game.cfg`: `cost`, `duration`, `cooldown` and `owned` (1 for the starting kit), plus its own parameters. Read them through `RunStats` (`stats.get("action.<key>.name", default)`) so cards can change them.
-3. **Make it act on a measurement path.** Add its effect to `PlayerActionSystem::modifiers` as a change to `SensorModifiers`. If no existing field fits, add one and apply it in `src/simulation/lidar.cpp` or `odometry.cpp`. Wobo's software must never be told: an effect on the physical world (as with Kidnap, Gummy Wheels' slow-down, Road Block or Magnet's drag) goes through `RunDirector` and stays out of the robot's messages, and so does one on its computer (Overload's cap in `RunDirector::compute_share`).
+3. **Make it act on a measurement path.** Add its effect to `PlayerActionSystem::modifiers` as a change to `SensorModifiers`. If no existing field fits, add one and apply it in `src/simulation/lidar.cpp` or `odometry.cpp`. Wobo's software must never be told: an effect on the physical world (as with Kidnap, Road Block or Magnet's drag) goes through `RunDirector` and stays out of the robot's messages, and so does one on its computer (Overload's cap in `RunDirector::compute_share`).
 4. **Put it in the draft.** In `data/cards/cards.cfg`, add an ability card (`effect = grant <key>`) and upgrade cards (`requires = <key>`, `effect = stat action.<key>.duration *1.5`, ...). An action that only works on some maps gets a `needs` trait, checked in `RunDirector::suits_map`.
 5. **Give it a face.**
    - A button colour in `src/ui/widgets.h`, used by the `switch` blocks in `ui/hud.cpp` and `app/game_app.cpp`.
@@ -274,7 +301,7 @@ tests/, tools/      unit tests, headless benchmark, map generator
    - Optionally, a look on Wobo in `rendering/robot_model.cpp`.
    - Hotkeys follow the HUD's order.
 6. **Measure it.**
-   - Add it to the `--study` list and the scripted players' rotations in `tools/bench.cpp`.
+   - Add it to the `--study` list and the scripted players' rotations in `tools/bench.cpp`, and place its cards in the strong player's priority by what they are worth (give each at the start of a run with `--set`; see "What a card is worth").
    - Extend the test "actions: each action changes only its own data path" in `tests/gameplay_tests.cpp`.
    - Run `./build/wobo_bench --study --only <key>`, which shows what it does to a full-strength Wobo.
    - Run the three `--player` profiles, which show what it does to the difficulty curve.

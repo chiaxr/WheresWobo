@@ -161,16 +161,13 @@ void RunDirector::step() {
     movers_.step(dt, *world_, sim_->true_pose(), sim_config_.dynamics.radius_m);
     world_->set_movers(movers_.discs());
 
-    // Gummy Wheels slows Wobo for real; its software asked for full speed.
-    MotionCommand drive = command_;
-    drive.linear_mps *= actions_.speed_scale(stats_);
     // The Magnet drags Wobo towards it while Wobo is within its reach (a
     // Kidnap can carry it out); its wheels and gyro never feel it.
     std::optional<ExternalPull> pull;
     if (magnet_ && distance(sim_->true_pose().position(), *magnet_) <= stats_.get("action.magnet.range", 5.0f) + 0.5f) {
         pull = ExternalPull{*magnet_, stats_.get("action.magnet.speed", 0.8f) * dt};
     }
-    const StepResult result = sim_->step(drive, modifiers_, pull ? &*pull : nullptr);
+    const StepResult result = sim_->step(command_, modifiers_, pull ? &*pull : nullptr);
     AgentInput input;
     input.odometry = result.odometry;
     input.scan = result.scan ? &*result.scan : nullptr;

@@ -153,10 +153,6 @@ int PlayerActionSystem::total_uses() const {
     return n;
 }
 
-float PlayerActionSystem::speed_scale(const RunStats& stats) const {
-    return active(ActionId::Gummy) ? clampf(stats.get("action.gummy.speed", 0.5f), 0.1f, 1.0f) : 1.0f;
-}
-
 SensorModifiers PlayerActionSystem::modifiers(const RunStats& stats) const {
     SensorModifiers m;
     if (active(ActionId::Range)) {
@@ -178,7 +174,8 @@ SensorModifiers PlayerActionSystem::modifiers(const RunStats& stats) const {
     }
     if (active(ActionId::Gummy)) {
         // Distance only: the wheels slip in the gum, so they count more turns
-        // than Wobo travels. (The slow-down is physical; see speed_scale.)
+        // than Wobo travels. It used to slow Wobo for real too, but a slower
+        // Wobo takes more scans per metre and finds itself sooner.
         m.odom_distance_noise_scale *= std::max(1.0f, stats.get("action.gummy.noise_scale", 4.0f));
         m.odom_scale_bias += stats.get("action.gummy.scale_bias", 0.5f);
     }

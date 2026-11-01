@@ -186,18 +186,19 @@ void weak_step(RunDirector& run, Rng& rng, double& next_look_s) {
 }
 
 // An expert: plays like the ordinary player (holding energy back measured
-// worse than spending it), but drafts by a fixed priority (Kidnap and what
-// feeds it, Magnet, then Gyro Jam, Overload, energy, and the rest, as
-// --study ranks them), favours the stronger effects, Kidnaps to the spot
-// farthest from where Wobo thinks it is, and saves Magnet, then Overload, for
-// a lock-on alarm that Kidnap can't answer.
+// worse than spending it), but drafts by a fixed priority: what each card
+// did for this player when given at the start of a run (32 seeds per map),
+// which puts energy and Gyro Jam's upgrades first, since a player who keeps
+// everything running is always short of energy. Kidnaps to the spot farthest
+// from where Wobo thinks it is, and saves Overload, then Magnet, for a
+// lock-on alarm that Kidnap can't answer.
 void strong_step(RunDirector& run, Rng& rng) {
     static const char* const kPriority[] = {
-        "kidnap", "spare_kidnap", "kidnap_cool", "kidnap_cheap", "drift_long", "aftershock", "overload",
-        "overload_cool", "overload_long", "battery", "capacitor", "solar", "magnet", "magnet_long",
-        "magnet_strong", "overclock", "vertigo", "drift_strong", "gummy", "gummy_sticky", "block",
-        "block_long", "brinkmanship", "chain_reaction", "power_surge", "cold_snap", "colour", "repaint",
-        "colour_long", "range_cheap", "range_long", "range_deep", "static_cling"};
+        "overclock", "vertigo", "solar", "magnet", "drift_long", "capacitor", "kidnap", "colour",
+        "colour_long", "repaint", "range_long", "chain_reaction", "battery", "drift_strong", "overload",
+        "overload_cool", "overload_long", "magnet_long", "magnet_strong", "kidnap_cheap", "kidnap_cool",
+        "spare_kidnap", "aftershock", "power_surge", "cold_snap", "range_cheap", "range_deep", "static_cling",
+        "brinkmanship", "block", "block_long", "gummy", "gummy_sticky"};
     if (run.phase() == RunPhase::Drafting) {
         int best = 0;
         std::size_t best_rank = std::size(kPriority);

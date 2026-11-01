@@ -347,21 +347,6 @@ TEST("kidnap: rejects invalid and too-close destinations") {
     CHECK_NEAR(run.energy().current(), 100.0f, 1e-4);
 }
 
-TEST("gummy wheels: slows Wobo for real while it lasts") {
-    RunStats stats = base_stats();
-    stats.set("action.gummy.owned", 1.0f);
-    stats.set("energy.start", 100.0f);
-    EnergySystem energy;
-    energy.reset(stats);
-    PlayerActionSystem a;
-    a.reset(1);
-    CHECK_NEAR(a.speed_scale(stats), 1.0f, 1e-6);
-    REQUIRE(a.activate(ActionId::Gummy, stats, energy, 0.0f) == ActivateResult::Ok);
-    CHECK(a.speed_scale(stats) < 1.0f);
-    a.step(100.0f);
-    CHECK_NEAR(a.speed_scale(stats), 1.0f, 1e-6);
-}
-
 TEST("map traits: reachability and colour on the shipped maps") {
     const float radius = load_game_config().get_float("robot.radius", 0.2f);
     for (const MapInfo& m : list_maps()) {
