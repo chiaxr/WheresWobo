@@ -31,6 +31,9 @@ constexpr PropKind kKinds[] = {
     {"tree", "trunk", true},
     {"lamp", "steel", true},
     {"fountain", "wall_light", true},  // r
+    // The library.
+    {"shaft", "wall_light", true},     // a railed ventilation shaft: r
+    {"lectern", "desk", true},         // a book open on a reading stand: text on its pages
     // Decoration only.
     {"blackboard", "board", false},    // on a wall face: w, text
     {"door", "door", false},           // handle and letter slot on a door cell
@@ -80,6 +83,8 @@ float prop_height(const Prop& p) {
     if (k == "tree") return 1.6f;
     if (k == "lamp") return 1.1f;
     if (k == "fountain") return 0.35f;
+    if (k == "shaft") return 0.45f;
+    if (k == "lectern") return 0.56f;
     return 0.0f;
 }
 
@@ -137,7 +142,9 @@ std::vector<Shape> prop_footprint(const Prop& p, std::uint8_t chair_material) {
         disc(0.16f);
     } else if (k == "lamp") {
         disc(0.07f);
-    } else if (k == "fountain") {
+    } else if (k == "lectern") {
+        box(0.32f, 0.4f);
+    } else if (k == "fountain" || k == "shaft") {
         disc(p.get_float("r", 0.5f));
     }
     return out;

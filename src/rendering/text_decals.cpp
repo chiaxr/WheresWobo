@@ -98,11 +98,13 @@ void TextDecals::build(const Map2D& map) {
         const Vector3 n{std::cos(plate.yaw), 0.0f, std::sin(plate.yaw)};
         const Vector3 r{0.5f * plate.width * n.z, 0.0f, -0.5f * plate.width * n.x};
         const float hh = 0.5f * plate.height;
+        // Up the plate: straight up, leaning back by its tilt.
+        const Vector3 u{-hh * std::sin(plate.tilt) * n.x, hh * std::cos(plate.tilt), -hh * std::sin(plate.tilt) * n.z};
         const Vector3 c = plate.centre;
-        d.corners[0] = {c.x - r.x, c.y - hh, c.z - r.z};
-        d.corners[1] = {c.x + r.x, c.y - hh, c.z + r.z};
-        d.corners[2] = {c.x + r.x, c.y + hh, c.z + r.z};
-        d.corners[3] = {c.x - r.x, c.y + hh, c.z - r.z};
+        d.corners[0] = {c.x - r.x - u.x, c.y - u.y, c.z - r.z - u.z};
+        d.corners[1] = {c.x + r.x - u.x, c.y - u.y, c.z + r.z - u.z};
+        d.corners[2] = {c.x + r.x + u.x, c.y + u.y, c.z + r.z + u.z};
+        d.corners[3] = {c.x - r.x + u.x, c.y + u.y, c.z - r.z + u.z};
         decals_.push_back(d);
     }
     if (font.texture.id != GetFontDefault().texture.id) UnloadFont(font);

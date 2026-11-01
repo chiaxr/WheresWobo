@@ -44,6 +44,48 @@ bool in_shadow(const Map2D& map, float x, float z) {
     return false;
 }
 
+// Bookshelves (look = books): boards across an exposed side, and spines of
+// every height and colour between them. `base` is the side's bottom corner
+// (at height lo), `along` runs the cell's width across it, `n` faces out.
+void add_books(MeshBuilder& b, Vector3 base, Vector3 along, Vector3 n, float lo, float h, Color shelf, int seed) {
+    constexpr Color kSpines[] = {{150, 52, 46, 255},  {62, 92, 140, 255},  {70, 116, 74, 255},  {196, 170, 112, 255},
+                                 {112, 70, 110, 255}, {178, 110, 54, 255}, {46, 60, 84, 255},   {222, 210, 180, 255}};
+    const float e = 0.003f;
+    const float width = Vector3Length(along);
+    const Vector3 t = Vector3Scale(along, 1.0f / width);
+    const auto at = [&](float u, float y) {
+        return Vector3Add(Vector3Add(base, Vector3Scale(t, u)), Vector3{n.x * e, y - base.y, n.z * e});
+    };
+    const auto rect = [&](float u0, float u1, float y0, float y1, Color c) {
+        b.quad(at(u0, y0), at(u0, y1), at(u1, y1), at(u1, y0), n, c);
+    };
+    std::uint32_t r = static_cast<std::uint32_t>(seed) * 2654435761u + 0x9e3779b9u;
+    const auto next = [&]() {
+        r ^= r << 13;
+        r ^= r >> 17;
+        r ^= r << 5;
+        return static_cast<float>(r & 0xffff) / 65535.0f;
+    };
+    const Color board = prim::shade(shelf, 0.62f);
+    constexpr float kBoard = 0.025f;
+    const float rows = std::max(1.0f, std::round((h - 0.06f) / 0.21f));
+    const float pitch = (h - 0.06f) / rows;
+    for (int row = 0; row < static_cast<int>(rows); ++row) {
+        const float y0 = 0.03f + pitch * static_cast<float>(row);
+        if (y0 + pitch <= lo) continue;
+        rect(0.0f, width, std::max(lo, y0), std::max(lo, y0 + kBoard), board);
+        float u = 0.02f + 0.03f * next();
+        while (u < width - 0.03f) {
+            const float w = std::min(0.035f + 0.04f * next(), width - 0.02f - u);
+            const float top = y0 + kBoard + (pitch - kBoard - 0.02f) * (0.68f + 0.3f * next());
+            Color c = kSpines[static_cast<int>(next() * 7.99f)];
+            c = prim::mix(c, shelf, 0.3f);
+            if (top > lo) rect(u, u + w, std::max(lo, y0 + kBoard), top, c);
+            u += w + (next() < 0.15f ? 0.03f : 0.004f);
+        }
+    }
+}
+
 void add_pattern(MeshBuilder& b, Pattern pattern, float x0, float z0, float cs, float y, Color c) {
     const float u = cs / 8.0f;
     switch (pattern) {
@@ -162,6 +204,13 @@ void IsoRenderer::build(const Map2D& map, const ToonShader& shader) {
             if (hxn < h) lit.quad({x0, hxn, z1}, {x0, h, z1}, {x0, h, z0}, {x0, hxn, z0}, {-1, 0, 0}, col);
             if (hzp < h) lit.quad({x1, hzp, z1}, {x1, h, z1}, {x0, h, z1}, {x0, hzp, z1}, {0, 0, 1}, col);
             if (hzn < h) lit.quad({x0, hzn, z0}, {x0, h, z0}, {x1, h, z0}, {x1, hzn, z0}, {0, 0, -1}, col);
+            if (m.look == "books") {
+                const int seed = cx * 7919 + cz * 104729;
+                if (hxp < h) add_books(marks, {x1, hxp, z0}, {0, 0, cs}, {1, 0, 0}, hxp, h, col, seed);
+                if (hxn < h) add_books(marks, {x0, hxn, z1}, {0, 0, -cs}, {-1, 0, 0}, hxn, h, col, seed + 1);
+                if (hzp < h) add_books(marks, {x1, hzp, z1}, {-cs, 0, 0}, {0, 0, 1}, hzp, h, col, seed + 2);
+                if (hzn < h) add_books(marks, {x0, hzn, z0}, {cs, 0, 0}, {0, 0, -1}, hzn, h, col, seed + 3);
+            }
 
             // Drawn outlines: a band round the top wherever a side shows, a
             // line where the visible faces meet the floor, and strips down the

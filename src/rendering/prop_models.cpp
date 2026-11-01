@@ -387,6 +387,43 @@ void fountain(Sculptor& s, const Map2D& map, const Prop& p) {
     s.ball({0, 0.8f, 0}, {0.06f, 0.08f, 0.06f}, Color{140, 200, 230, 255}, false);
 }
 
+// Borges' ventilation shaft: a stone curb round a drop into the dark, and a
+// low brass railing.
+void shaft(Sculptor& s, const Map2D& map, const Prop& p) {
+    const float r = p.get_float("r", 0.5f);
+    const Color stone = mat_colour(map, p);
+    const Color brass{196, 160, 82, 255};
+    s.cyl({0, 0, 0}, {0, 0.08f, 0}, r, stone, 32);
+    s.cyl({0, 0.08f, 0}, {0, 0.083f, 0}, r - 0.08f, Color{12, 12, 20, 255}, 32, false);
+    s.cyl({0, 0.083f, 0}, {0, 0.085f, 0}, r - 0.22f, Color{4, 4, 10, 255}, 32, false);
+    constexpr int kPosts = 10;
+    const float rr = r - 0.04f;
+    for (int i = 0; i < kPosts; ++i) {
+        const float a = kTwoPi * static_cast<float>(i) / kPosts;
+        const float b = kTwoPi * static_cast<float>(i + 1) / kPosts;
+        s.cyl({rr * std::cos(a), 0.08f, rr * std::sin(a)}, {rr * std::cos(a), 0.44f, rr * std::sin(a)}, 0.014f, brass, 6);
+        s.cyl({rr * std::cos(a), 0.44f, rr * std::sin(a)}, {rr * std::cos(b), 0.44f, rr * std::sin(b)}, 0.018f, brass, 6);
+        s.cyl({rr * std::cos(a), 0.26f, rr * std::sin(a)}, {rr * std::cos(b), 0.26f, rr * std::sin(b)}, 0.01f, brass, 6,
+              false);
+    }
+}
+
+// The catalogue of catalogues, open on a reading stand; local +x is where
+// the reader stands.
+void lectern(Sculptor& s) {
+    const Color wood{92, 58, 38, 255};
+    const Color page{252, 242, 212, 255};
+    const Color gold{220, 184, 96, 255};
+    s.box({0, 0.02f, 0}, {0.3f, 0.04f, 0.3f}, wood);
+    s.cyl({0, 0.04f, 0}, {0, 0.47f, 0}, 0.035f, wood, 8);
+    s.box({0, 0.49f, 0}, {0.32f, 0.04f, 0.4f}, wood);
+    s.box({0, 0.517f, 0}, {0.26f, 0.014f, 0.4f}, Color{150, 30, 50, 255});  // its crimson binding
+    s.box({0, 0.531f, -0.095f}, {0.24f, 0.014f, 0.18f}, page, 0.0f, false);
+    s.box({0, 0.531f, 0.095f}, {0.24f, 0.014f, 0.18f}, page, 0.0f, false);
+    s.flat({0, 0.539f, 0}, 0.24f, 0.012f, Color{196, 170, 120, 255});  // the gutter
+    s.box({0.13f, 0.5f, 0.03f}, {0.012f, 0.06f, 0.02f}, gold, 0.0f, false);  // a ribbon hanging down
+}
+
 // Wall-mounted: local +x is the wall's outward normal; the prop's position
 // is on the wall face.
 void blackboard(Sculptor& s, const Prop& p) {
@@ -482,6 +519,8 @@ void build_props(const Map2D& map, MeshBuilder& lit, MeshBuilder& hull, MeshBuil
         else if (k == "tree") tree(s, map, p);
         else if (k == "lamp") lamp(s);
         else if (k == "fountain") fountain(s, map, p);
+        else if (k == "shaft") shaft(s, map, p);
+        else if (k == "lectern") lectern(s);
         else if (k == "blackboard") blackboard(s, p);
         else if (k == "door") door(s, p);
         else if (k == "elevator") elevator(s, p);
@@ -505,6 +544,10 @@ bool text_plate(const Prop& p, TextPlate* out) {
     }
     if (p.kind == "sign") {
         *out = {at(0.017f, 0.55f, 0), p.yaw, 0.66f, 0.18f, Color{60, 40, 30, 255}, Color{0, 0, 0, 0}};
+        return true;
+    }
+    if (p.kind == "lectern") {
+        *out = {at(0, 0.54f, 0), p.yaw, 0.38f, 0.2f, Color{70, 40, 34, 255}, Color{0, 0, 0, 0}, kPi * 0.5f};
         return true;
     }
     if (p.kind == "cart") {

@@ -25,6 +25,7 @@ struct TextPlate {
     float height;
     Color ink;
     Color ground;  // background, or transparent to draw straight onto the prop
+    float tilt = 0.0f;  // radians its top leans back from upright (pi/2: lying face up)
 };
 bool text_plate(const Prop& prop, TextPlate* out);
 

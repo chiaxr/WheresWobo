@@ -389,6 +389,74 @@ maps.append(m)
 
 
 # ---------------------------------------------------------------------------
+# Library. Borges' Library of Babel: an endless honeycomb of identical
+# hexagonal galleries, shelves on every wall, a ventilation shaft in the
+# middle of each, and somewhere the Crimson Hexagon. "The Library is a sphere
+# whose exact centre is any one of its hexagons": nineteen of them here, two
+# rings round a middle one. Every gallery looks like every other, so this is
+# the easy map: only the edge of the honeycomb and the crimson shelves tell
+# Wobo where it is.
+# ---------------------------------------------------------------------------
+m = Map("library", 1, 1, "Library",
+        "Nineteen hexagonal galleries, shelved alike from floor to ceiling. Only the outer walls, and "
+        "one gallery said to be shelved in crimson, tell them apart.",
+        0, "Easy")
+m.material("H", "shelf", name="Bookshelf", rgb="122, 86, 54", solid=True, height=0.8, look="books")
+m.material("X", "crimson_shelf", name="Crimson shelf", rgb="150, 30, 50", solid=True, height=0.8, look="books")
+# Beyond the honeycomb: more of the library, out of sight.
+m.material("V", "beyond", name="Beyond", rgb="36, 40, 66", solid=True, height=0.02)
+RINGS = 2               # galleries round the middle one
+HEX_PX, HEX_PZ = 13, 15  # pitch across and down, in cells (4.3 m sides); odd columns sit 7 cells lower
+CRIMSON = (2, 0)        # (column, row) of the Crimson Hexagon: the outer ring's northern tip
+DOOR_R = 1.6            # doorway half-width (cells) round the middle of a shared wall
+WALL_T = 2.6            # how much nearer one gallery a cell must be to be its floor
+
+
+def hex_centre(i, j):
+    return (HEX_PX * i, HEX_PZ * j + (HEX_PZ // 2 if i % 2 else 0))
+
+
+def hex_distance(a, b):
+    (x1, z1), (x2, z2) = [(i, j - (i - (i & 1)) // 2) for i, j in (a, b)]
+    return max(abs(x1 - x2), abs(z1 - z2), abs(x1 + z1 - x2 - z2))
+
+
+SPAN = range(-1, 2 * RINGS + 2)
+LATTICE = {(i, j): hex_centre(i, j) for i in SPAN for j in SPAN}
+GALLERIES = {k: v for k, v in LATTICE.items() if hex_distance(k, (RINGS, RINGS)) <= RINGS}
+# Canvas: the galleries' centres plus a hexagon's reach and a cell of margin.
+reach_x, reach_z = round(HEX_PZ / 3 ** 0.5) + 2, HEX_PZ // 2 + 2
+ox = min(x for x, _ in GALLERIES.values()) - reach_x
+oz = min(z for _, z in GALLERIES.values()) - reach_z
+lw = max(x for x, _ in GALLERIES.values()) - ox + reach_x
+lh = max(z for _, z in GALLERIES.values()) - oz + reach_z
+m.c = Canvas(lw, lh, border="V", fill="V")
+for z in range(lh):
+    for x in range(lw):
+        p = (x + 0.5 + ox, z + 0.5 + oz)
+        dist = lambda k: ((LATTICE[k][0] - p[0]) ** 2 + (LATTICE[k][1] - p[1]) ** 2) ** 0.5
+        a, b = sorted(LATTICE, key=lambda k: (dist(k), k))[:2]
+        if a not in GALLERIES:
+            continue
+        if dist(b) - dist(a) >= WALL_T:
+            m.c.set(x, z, "+")
+            continue
+        m.c.set(x, z, "X" if a == CRIMSON else "H")
+        # Doorways in the walls running north-south and north-east-south-west.
+        dx, dz = LATTICE[b][0] - LATTICE[a][0], LATTICE[b][1] - LATTICE[a][1]
+        if b in GALLERIES and (dx == 0 or dx * dz < 0):
+            mid = ((LATTICE[a][0] + LATTICE[b][0]) / 2, (LATTICE[a][1] + LATTICE[b][1]) / 2)
+            if (p[0] - mid[0]) ** 2 + (p[1] - mid[1]) ** 2 <= DOOR_R ** 2:
+                m.c.set(x, z, "+")
+for (x, z) in GALLERIES.values():
+    m.prop("shaft", float(x - ox), float(z - oz), r=0.6)
+# In the Crimson Hexagon, the catalogue of catalogues lies open on a stand.
+cx, cz = hex_centre(*CRIMSON)
+m.prop("lectern", cx - ox + 2.0, cz - oz + 1.5, yaw=45, text="Catalogue|of catalogues")
+m.focus = (hex_centre(*CRIMSON)[0] - ox, hex_centre(*CRIMSON)[1] - oz + 2.0)
+maps.append(m)
+
+# ---------------------------------------------------------------------------
 
 def check(m):
     rows = m.c.rows()
