@@ -6,9 +6,12 @@
 // can be judged by how many days a reasonable player survives.
 // Used both to validate the robotics and to balance the game.
 //
-//   wobo_bench [--map ID|all] [--seeds N] [--limit S] [--kidnap] [--player]
+//   wobo_bench [--map ID|all] [--seeds N] [--seed FIRST] [--limit S] [--kidnap] [--player]
 //              [--localizer NAME] [--planner NAME] [--set key=value]...
-//              [--data DIR] [--csv]
+//              [--data DIR] [--csv] [--trace]
+//
+// --trace prints, every two simulated seconds of each run, the true pose,
+// Wobo's estimate and what it is doing (for debugging the agent).
 
 #include <algorithm>
 #include <chrono>
@@ -62,8 +65,17 @@ void bot_step(RunDirector& run, Rng& rng) {
     }
 }
 
+void trace_line(const RunDirector& run) {
+    const Pose2D t = run.sim().true_pose();
+    const PoseEstimate e = run.agent().estimate();
+    std::printf("  %6.1f true(%5.1f,%5.1f,%4.0f) est(%5.1f,%5.1f,%4.0f) conf %.2f cons %.2f err %5.2f %s%s\n",
+                run.sim().time_s(), t.x, t.z, t.heading_rad * kRadToDeg, e.pose.x, e.pose.z,
+                e.pose.heading_rad * kRadToDeg, e.confidence, e.consistency, run.referee().position_error(),
+                run.agent().plan().reason.c_str(), run.agent().moving() ? "" : " (still)");
+}
+
 Result run_one(const Config& cfg, const std::string& map, std::uint64_t seed, double limit_s,
-               bool kidnap, bool player) {
+               bool kidnap, bool player, bool trace) {
     Result r;
     RunDirector run(cfg);
     std::string err;
@@ -92,6 +104,7 @@ Result run_one(const Config& cfg, const std::string& map, std::uint64_t seed, do
             r.time_s = kidnap_time;
         }
         if (player) bot_step(run, rng);
+        if (trace && i % static_cast<int>(2.0 / run.step_s()) == 0) trace_line(run);
         run.step();
         if (run.phase() == RunPhase::Drafting) {
             if (player) bot_step(run, rng);
@@ -122,10 +135,12 @@ double median(std::vector<double> v) {
 int main(int argc, char** argv) {
     std::string map_arg = "all";
     int seeds = 8;
+    int first_seed = 1;
     double limit_s = 300.0;
     bool kidnap = false;
     bool player = false;
     bool csv = false;
+    bool trace = false;
     Config cfg = load_game_config();
 
     for (int i = 1; i < argc; ++i) {
@@ -133,12 +148,14 @@ int main(int argc, char** argv) {
         const auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
         if (a == "--map") map_arg = next();
         else if (a == "--seeds") seeds = std::atoi(next().c_str());
+        else if (a == "--seed") first_seed = std::atoi(next().c_str());
         else if (a == "--limit") limit_s = std::atof(next().c_str());
         else if (a == "--kidnap") kidnap = true;
         else if (a == "--player") player = true;
         else if (a == "--localizer") cfg.set("localizer.type", next());
         else if (a == "--planner") cfg.set("planner.type", next());
         else if (a == "--csv") csv = true;
+        else if (a == "--trace") trace = true;
         else if (a == "--data") {
             data::set_override_dir(next());
             cfg = load_game_config();
@@ -168,13 +185,12 @@ int main(int argc, char** argv) {
         std::vector<double> days;
         double ms = 0.0;
         int ok = 0;
-        for (int s = 1; s <= seeds; ++s) {
-            const Result r = run_one(cfg, map, static_cast<std::uint64_t>(s), limit_s, kidnap, player);
+        for (int s = first_seed; s < first_seed + seeds; ++s) {
+            const Result r = run_one(cfg, map, static_cast<std::uint64_t>(s), limit_s, kidnap, player, trace);
             ms += r.ms_per_sim_s;
-            if (r.time_s >= 0.0) {
-                ++ok;
-                times.push_back(r.time_s);
-            }
+            if (r.time_s >= 0.0) times.push_back(r.time_s);
+            // "success": localized, or with --kidnap, recovered from the kidnap.
+            if (kidnap ? r.recovery_s >= 0.0 : r.time_s >= 0.0) ++ok;
             if (r.recovery_s >= 0.0) recoveries.push_back(r.recovery_s);
             days.push_back(r.days);
             if (csv) {

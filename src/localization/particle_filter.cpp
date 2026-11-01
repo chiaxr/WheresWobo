@@ -27,6 +27,7 @@ ParticleFilterConfig ParticleFilterConfig::from(const Config& cfg) {
     c.alpha_slow = cfg.get_float("localizer.alpha_slow", c.alpha_slow);
     c.alpha_fast = cfg.get_float("localizer.alpha_fast", c.alpha_fast);
     c.max_injection = cfg.get_float("localizer.max_injection", c.max_injection);
+    c.inject_candidates = std::max(1, cfg.get_int("localizer.inject_candidates", c.inject_candidates));
     c.resample_ess = cfg.get_float("localizer.resample_ess", c.resample_ess);
     c.cluster_radius_m = cfg.get_float("localizer.cluster_radius", c.cluster_radius_m);
     c.cluster_heading_rad =
@@ -84,61 +85,55 @@ void ParticleFilter::predict(const OdometryDelta& odom) {
     for (auto& h : diag_.hypotheses) h.pose = compose(h.pose, odom.motion());
 }
 
+float ParticleFilter::log_likelihood(const Pose2D& pose) const {
+    const float eps = config_.p_random;
+    if (!map_->point_free(pose.x, pose.z)) {
+        return static_cast<float>(beams_.size()) * std::log(eps * 0.2f);
+    }
+    const float inv_sr2 = 1.0f / (config_.sigma_range * config_.sigma_range);
+    const float inv_sc2 = 1.0f / (config_.sigma_colour * config_.sigma_colour);
+    float ll = 0.0f;
+    for (const Beam& b : beams_) {
+        const RayHit e = cast_ray(*map_, pose.x, pose.z, pose.heading_rad + b.angle, max_range_);
+        float p;
+        if (b.hit) {
+            const float dr = b.range - e.range;  // e.range == max_range for a miss
+            const float pr = std::exp(-0.5f * dr * dr * inv_sr2);
+            float pc = 1.0f;
+            if (e.hit) {
+                const float dc = colour_distance(b.rgb, map_->material(e.material).rgb);
+                pc = config_.colour_floor + (1.0f - config_.colour_floor) * std::exp(-0.5f * dc * dc * inv_sc2);
+            }
+            p = (1.0f - eps) * pr * pc + eps;
+        } else {
+            p = e.hit ? config_.p_unexpected_miss : 1.0f;
+        }
+        ll += std::log(p);
+    }
+    return ll;
+}
+
 void ParticleFilter::observe(const RgbLidarScan& scan) {
     if (!map_ || !scan.valid || scan.returns.empty()) return;
 
     // The beams used this update. The offset rotates so every beam
     // contributes over successive scans.
-    struct Beam {
-        float angle;
-        float range;
-        bool hit;
-        Rgb rgb;
-    };
-    std::vector<Beam> beams;
+    beams_.clear();
     const int n_returns = static_cast<int>(scan.returns.size());
     for (int i = beam_offset_ % config_.beam_stride; i < n_returns; i += config_.beam_stride) {
         const LidarReturn& r = scan.returns[i];
-        beams.push_back({r.angle_rad, r.range_m, r.hit, r.rgb});
+        beams_.push_back({r.angle_rad, r.range_m, r.hit, r.rgb});
     }
     beam_offset_ = (beam_offset_ + 1) % config_.beam_stride;
-    if (beams.empty()) return;
+    if (beams_.empty()) return;
+    max_range_ = scan.max_range_m;
 
-    const float max_range = scan.max_range_m;
-    const float inv_sr2 = 1.0f / (config_.sigma_range * config_.sigma_range);
-    const float inv_sc2 = 1.0f / (config_.sigma_colour * config_.sigma_colour);
-    const float eps = config_.p_random;
-    const float n_beams = static_cast<float>(beams.size());
-    const float wall_log_lik = n_beams * std::log(eps * 0.2f);
-
+    const float n_beams = static_cast<float>(beams_.size());
     const std::size_t n = diag_.particles.size();
     float w_avg = 0.0f;
     float max_ll = -1e30f;
     for (std::size_t i = 0; i < n; ++i) {
-        const Pose2D& pose = diag_.particles[i].pose;
-        float ll = 0.0f;
-        if (!map_->point_free(pose.x, pose.z)) {
-            ll = wall_log_lik;
-        } else {
-            for (const Beam& b : beams) {
-                const RayHit e = cast_ray(*map_, pose.x, pose.z, pose.heading_rad + b.angle, max_range);
-                float p;
-                if (b.hit) {
-                    const float dr = b.range - e.range;  // e.range == max_range for a miss
-                    const float pr = std::exp(-0.5f * dr * dr * inv_sr2);
-                    float pc = 1.0f;
-                    if (e.hit) {
-                        const float dc = colour_distance(b.rgb, map_->material(e.material).rgb);
-                        pc = config_.colour_floor +
-                             (1.0f - config_.colour_floor) * std::exp(-0.5f * dc * dc * inv_sc2);
-                    }
-                    p = (1.0f - eps) * pr * pc + eps;
-                } else {
-                    p = e.hit ? config_.p_unexpected_miss : 1.0f;
-                }
-                ll += std::log(p);
-            }
-        }
+        const float ll = log_likelihood(diag_.particles[i].pose);
         log_lik_[i] = ll;
         w_avg += diag_.particles[i].weight * std::exp(ll / n_beams);
         max_ll = std::max(max_ll, ll);
@@ -202,8 +197,20 @@ void ParticleFilter::resample(float inject_fraction) {
         scratch_[i] = {p, 0.0f};
         u += step;
     }
+    // Injected particles: the best fit to the latest scan among a few random
+    // poses (sensor-resetting), so recovery lands near places that look right.
     for (std::size_t i = n_keep; i < n; ++i) {
-        scratch_[i] = {map_->sample_valid_pose(rng_, config_.robot_radius), 0.0f};
+        Pose2D best = map_->sample_valid_pose(rng_, config_.robot_radius);
+        float best_ll = config_.inject_candidates > 1 ? log_likelihood(best) : 0.0f;
+        for (int k = 1; k < config_.inject_candidates; ++k) {
+            const Pose2D p = map_->sample_valid_pose(rng_, config_.robot_radius);
+            const float ll = log_likelihood(p);
+            if (ll > best_ll) {
+                best_ll = ll;
+                best = p;
+            }
+        }
+        scratch_[i] = {best, 0.0f};
     }
     const float w = 1.0f / static_cast<float>(n);
     for (auto& p : scratch_) p.weight = w;

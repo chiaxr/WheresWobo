@@ -9,11 +9,20 @@
 // reduction, minus costs for distance and for paths that would hit walls,
 // plus a small bonus for going somewhere it has not been recently (tracked in
 // its own odometry frame, so no ground truth is needed).
+//
+// When the best move is expected to teach it almost nothing -- the belief has
+// collapsed onto one pose, or everything within one move looks alike -- a
+// greedy planner stalls (and a confidently wrong Wobo never finds out). It
+// then hands over to a GoalNavigator, which heads for a distinctive spot it
+// has not visited, so a wrong belief meets evidence against it. The same
+// happens when the belief has not narrowed for a while despite its efforts
+// (two look-alike rooms, say): it commits to one such journey.
 
 #include <deque>
 
 #include "core/config.h"
 #include "core/rng.h"
+#include "planning/goal_navigator.h"
 #include "planning/planner.h"
 
 namespace wobo {
@@ -32,13 +41,19 @@ struct InfoGainPlannerConfig {
     float safety_margin_m = 0.15f;
     float randomness = 0.03f;    // tie-breaking jitter on scores
     float scan_pause_s = 0.5f;
+    float stuck_gain = 0.05f;    // below this expected gain (nats), go somewhere new
+    float patience_s = 15.0f;    // no narrowing of the belief for this long: travel
+    float merge_radius_m = 0.3f; // sampled poses this alike count as one hypothesis
+    float merge_heading_rad = 0.35f;
+    GoalNavigatorConfig navigator;
 
     static InfoGainPlannerConfig from(const Config& cfg);
 };
 
 class InfoGainPlanner final : public IActivePlanner {
 public:
-    explicit InfoGainPlanner(const InfoGainPlannerConfig& config) : config_(config) {}
+    explicit InfoGainPlanner(const InfoGainPlannerConfig& config)
+        : config_(config), navigator_(config.navigator) {}
 
     std::string_view name() const override { return "info_gain"; }
     void reset(std::uint64_t seed) override;
@@ -60,8 +75,8 @@ private:
 
     void sample_hypotheses(const Map2D& map, const PoseEstimate& estimate,
                            const LocalizationDiagnostics* diagnostics);
-    // Free distance along a robot-frame direction according to the last scan.
-    float scan_clearance(const RgbLidarScan* scan, float direction, float radius) const;
+    // e^entropy of the belief: roughly how many distinct places it holds.
+    float effective_hypotheses(const LocalizationDiagnostics* diagnostics, float h_sample) const;
 
     InfoGainPlannerConfig config_;
     Rng rng_;
@@ -70,6 +85,11 @@ private:
     std::vector<Predicted> predicted_;  // [hypothesis][beam]
     std::deque<Vec2> visited_;          // odometry-frame trail
     double last_visit_s_ = -1e9;
+    GoalNavigator navigator_;
+    int stays_ = 0;                     // consecutive "stay and scan" plans
+    float progress_ref_ = 1e9f;         // effective hypotheses at the last progress
+    double progress_s_ = 0.0;
+    int committed_goal_ = -1;           // navigator goal to finish regardless of gain
 };
 
 }  // namespace wobo

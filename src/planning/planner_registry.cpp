@@ -1,5 +1,6 @@
 #include "planning/planner_registry.h"
 
+#include "planning/baseline_planners.h"
 #include "planning/info_gain_planner.h"
 
 namespace wobo {
@@ -16,6 +17,10 @@ const Entry kPlanners[] = {
      [](const Config& cfg) -> std::unique_ptr<IActivePlanner> {
          return std::make_unique<InfoGainPlanner>(InfoGainPlannerConfig::from(cfg));
      }},
+    {"landmark_tour",
+     [](const Config& cfg) -> std::unique_ptr<IActivePlanner> { return std::make_unique<LandmarkTourPlanner>(cfg); }},
+    {"random_walk",
+     [](const Config& cfg) -> std::unique_ptr<IActivePlanner> { return std::make_unique<RandomWalkPlanner>(cfg); }},
 };
 
 }  // namespace

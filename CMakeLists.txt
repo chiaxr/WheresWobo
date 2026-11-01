@@ -116,7 +116,10 @@ add_library(wobo_core STATIC
     src/simulation/odometry.cpp
     src/simulation/world_simulation.cpp
     src/localization/particle_filter.cpp
+    src/localization/histogram_filter.cpp
     src/localization/localizer_registry.cpp
+    src/planning/baseline_planners.cpp
+    src/planning/goal_navigator.cpp
     src/planning/info_gain_planner.cpp
     src/planning/planner_registry.cpp
     src/robot/robot_agent.cpp
@@ -150,6 +153,7 @@ add_library(wobo_game STATIC
     src/ui/card_screen.cpp
     src/ui/hud.cpp
     src/ui/menus.cpp
+    src/ui/poster.cpp
     src/ui/ui_text.cpp
     src/ui/widgets.cpp
     "${CMAKE_BINARY_DIR}/generated/embedded_fonts.cpp"
@@ -219,4 +223,11 @@ if(WOBO_BUILD_WEB)
         "-sGL_ENABLE_GET_PROC_ADDRESS=1"
         "-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE=$stringToNewUTF8,$UTF8ToString"
         "--shell-file" "${CMAKE_CURRENT_SOURCE_DIR}/web/emscripten_shell.html")
+
+    # Link-preview card referenced by the og:image tags in the shell
+    # (rendered with `WheresWobo --poster docs/og-image.png --size 1200x630`).
+    add_custom_command(TARGET wobo_web POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/docs/og-image.png"
+            "${CMAKE_BINARY_DIR}/dist/og-image.png")
 endif()

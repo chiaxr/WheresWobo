@@ -15,6 +15,7 @@
 #include "rendering/primitives.h"
 #include "ui/card_screen.h"
 #include "ui/menus.h"
+#include "ui/poster.h"
 #include "ui/ui_text.h"
 #include "ui/widgets.h"
 
@@ -51,10 +52,20 @@ float capture_ring_radius(const LocalizationReferee& ref) {
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-void GameApp::init() {
-    SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
-    InitWindow(kDefaultWidth, kDefaultHeight, "Where's Wobo?");
-    SetTargetFPS(60);
+void GameApp::init(const LaunchOptions& options) {
+    options_ = options;
+    profile_.seconds = options.profile_s;
+    const bool profiling = profile_.seconds > 0.0f;
+    const bool poster = !options.poster_path.empty();
+    // Profiling runs uncapped, so frame times show the real cost. A poster is
+    // drawn offscreen, so its window stays hidden.
+    SetConfigFlags(FLAG_MSAA_4X_HINT | (poster ? FLAG_WINDOW_HIDDEN : FLAG_WINDOW_RESIZABLE) |
+                   (profiling || poster ? 0u : FLAG_VSYNC_HINT));
+    // A poster's size is its render target's; its window need not fit the screen.
+    if (poster) InitWindow(320, 180, "Where's Wobo?");
+    else InitWindow(options.width > 0 ? options.width : kDefaultWidth, options.height > 0 ? options.height : kDefaultHeight,
+                    "Where's Wobo?");
+    SetTargetFPS(profiling ? 0 : 60);
     SetExitKey(KEY_NULL);
 
     click_capture::install();
@@ -70,7 +81,7 @@ void GameApp::init() {
 }
 
 void GameApp::shutdown() {
-    save_progress();
+    if (options_.poster_path.empty()) save_progress();
     iso_.unload();
     toon_.unload();
     ui::unload_fonts();
@@ -216,6 +227,12 @@ void GameApp::frame() {
     const float dt = std::min(GetFrameTime(), 0.1f);
     time_ += dt;
     const PointerFrame in = input_.poll(10.0f * pixel_scale_);
+    if (profile_.seconds > 0.0f) profile_frame();
+    if (!options_.poster_path.empty()) {
+        render_poster();
+        finished_ = true;
+        return;
+    }
     if (GetScreenWidth() != last_w_ || GetScreenHeight() != last_h_) {
         if (run_) refit_camera(*run_);
         else if (demo_) refit_camera(*demo_);
@@ -515,7 +532,7 @@ void GameApp::update_playing(float dt, const PointerFrame& in) {
         targeting_ = aiming_ = false;
         const RunScore sc = run_->score();
         Best& b = best_[run_->map_id()];
-        new_best_ = sc.survival_s > b.seconds;
+        new_best_ = sc.survival_s > b.seconds && profile_.seconds <= 0.0f;  // profiling plays no real runs
         if (new_best_) {
             b.seconds = sc.survival_s;
             b.day = sc.day;
@@ -534,6 +551,136 @@ void GameApp::update_over(float dt, const PointerFrame& in) {
     } else if ((in.tap && ui::contains(gl.menu, in.pos)) || in.key(KEY_ESCAPE)) {
         go_title();
     }
+}
+
+// ---------------------------------------------------------------------------
+// --profile
+// ---------------------------------------------------------------------------
+
+void GameApp::profile_frame() {
+    Profile& p = profile_;
+    const float dt = GetFrameTime();
+    if (p.scene >= 0) {
+        p.t += dt;
+        if (p.t > 1.0f) p.samples.push_back(dt);
+    }
+    const int scenes = 1 + static_cast<int>(maps_.size());
+    if (p.scene < 0 || p.t >= p.seconds + 1.0f) {
+        if (p.scene < 0) {
+            std::printf("Frame times at %dx%d, uncapped, 2x speed, %.0f s per scene:\n", GetScreenWidth(),
+                        GetScreenHeight(), p.seconds);
+            std::printf("%-12s %7s %8s %8s %8s %8s %8s\n", "scene", "frames", "avg fps", "avg ms", "p95 ms",
+                        "p99 ms", "max ms");
+        } else if (!p.samples.empty()) {
+            std::vector<float> v = p.samples;
+            std::sort(v.begin(), v.end());
+            double sum = 0.0;
+            for (float x : v) sum += x;
+            const double avg = sum / v.size();
+            const auto pct = [&](double q) { return 1000.0 * v[std::min(v.size() - 1, std::size_t(q * v.size()))]; };
+            const std::string name = p.scene == 0 ? "title" : maps_[p.scene - 1].id;
+            std::printf("%-12s %7zu %8.0f %8.2f %8.2f %8.2f %8.2f\n", name.c_str(), v.size(), 1.0 / avg,
+                        1000.0 * avg, pct(0.95), pct(0.99), 1000.0 * v.back());
+            std::fflush(stdout);
+        }
+        ++p.scene;
+        p.t = 0.0f;
+        p.samples.clear();
+        if (p.scene == 0) {
+            go_title();
+        } else if (p.scene < scenes) {
+            map_index_ = p.scene - 1;
+            start_run();
+            speed_index_ = 1;
+        } else {
+            finished_ = true;
+        }
+    }
+    // Keep the run going: take the first card, and start over if Wobo wins.
+    if (screen_ == Screen::Playing && run_ && run_->phase() == RunPhase::Drafting) run_->choose_card(0);
+    if (screen_ == Screen::Over && p.scene > 0) {
+        start_run();
+        speed_index_ = 1;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// --poster
+// ---------------------------------------------------------------------------
+
+void GameApp::render_poster() {
+    const LaunchOptions& o = options_;
+    constexpr int kSuper = 2;  // drawn at twice the size, then filtered down
+    const int pw = o.width * kSuper;
+    const int ph = o.height * kSuper;
+    const float s = static_cast<float>(ph) / 720.0f;
+
+    // The right half: Wobo, kidnapped -- tied up, blindfolded, and dangling
+    // from a rope, turned three-quarters to the viewer.
+    const int art_w = pw / 2;
+    const float lift = 0.12f;
+    Camera3D cam{};
+    constexpr float kYaw = 45.0f * kDegToRad;
+    constexpr float kPitch = 14.0f * kDegToRad;
+    cam.target = {0.0f, lift + 0.27f, 0.0f};
+    cam.position = {cam.target.x + 10.0f * std::cos(kPitch) * std::sin(kYaw), cam.target.y + 10.0f * std::sin(kPitch),
+                    cam.target.z + 10.0f * std::cos(kPitch) * std::cos(kYaw)};
+    cam.up = {0.0f, 1.0f, 0.0f};
+    cam.fovy = 1.05f;  // world metres across the height (orthographic)
+    cam.projection = CAMERA_ORTHOGRAPHIC;
+    const float heading = 0.25f * kPi + 0.45f;  // facing the camera, then turned a little away
+
+    RenderTexture2D art = LoadRenderTexture(art_w, ph);
+    BeginTextureMode(art);
+    ClearBackground(ui::kBackground);
+    // A soft pool of light behind it.
+    DrawCircleGradient({0.5f * static_cast<float>(art_w), 0.5f * static_cast<float>(ph)}, 0.42f * static_cast<float>(ph), ui::kSpot,
+                       ui::kBackground);
+    BeginMode3D(cam);
+    toon_.begin();
+    // The rope it hangs from runs up behind its head, out of the picture.
+    const Vec2 back = Vec2{std::cos(heading), std::sin(heading)} * -0.14f;
+    const Vector3 knot{back.x, lift + 0.24f, back.z};
+    const Vector3 top{back.x * 0.6f, lift + 3.0f, back.z * 0.6f};
+    rlDrawRenderBatchActive();
+    rlSetCullFace(RL_CULL_FACE_FRONT);
+    toon_.set_flat(true);
+    prim::cylinder(knot, top, 0.026f, ui::kOutline, 10);
+    rlDrawRenderBatchActive();
+    rlSetCullFace(RL_CULL_FACE_BACK);
+    toon_.set_flat(false);
+    prim::cylinder(knot, top, 0.014f, Color{196, 142, 88, 255}, 10);
+    WoboStyle look;
+    look.lift = lift;
+    look.blindfold = true;
+    look.tied_up = true;
+    wobo_.draw(toon_, {0.0f, 0.0f}, heading, Face::Surprised, look);
+    toon_.end();
+    EndMode3D();
+    EndTextureMode();
+
+    RenderTexture2D poster = LoadRenderTexture(pw, ph);
+    BeginTextureMode(poster);
+    ClearBackground(ui::kBackground);
+    const float aw = static_cast<float>(art_w);
+    const float ah = static_cast<float>(ph);
+    DrawTexturePro(art.texture, {0.0f, 0.0f, aw, -ah}, {static_cast<float>(pw) - aw, 0.0f, aw, ah}, {0.0f, 0.0f}, 0.0f,
+                   WHITE);
+    const float left = 80.0f * s;
+    ui::draw_poster_text({left, 0.0f, static_cast<float>(pw) - aw - left, ah}, s);
+    EndTextureMode();
+
+    Image img = LoadImageFromTexture(poster.texture);
+    ImageFlipVertical(&img);
+    // Blending can leave alpha below 1; a poster is opaque.
+    ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
+    ImageResize(&img, o.width, o.height);
+    if (ExportImage(img, o.poster_path.c_str())) {
+        std::printf("Poster: %s (%dx%d)\n", o.poster_path.c_str(), o.width, o.height);
+    }
+    UnloadImage(img);
+    UnloadRenderTexture(poster);
+    UnloadRenderTexture(art);
 }
 
 // ---------------------------------------------------------------------------

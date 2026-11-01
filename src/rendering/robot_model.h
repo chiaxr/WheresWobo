@@ -24,6 +24,8 @@ struct WoboStyle {
     float lift = 0.0f;        // height off the ground (carried by the crane)
     bool sunglasses = false;  // Colour Blind: odd-coloured shades
     bool dizzy_stars = false; // Spin It: stars circling its head
+    bool blindfold = false;   // kidnapped: a cloth over its eyes, knotted at the back
+    bool tied_up = false;     // kidnapped: rope round its body and arms
 };
 
 class RobotModel {

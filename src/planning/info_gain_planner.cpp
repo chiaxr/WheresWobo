@@ -26,6 +26,11 @@ InfoGainPlannerConfig InfoGainPlannerConfig::from(const Config& cfg) {
     c.safety_margin_m = cfg.get_float("planner.safety_margin", c.safety_margin_m);
     c.randomness = cfg.get_float("planner.randomness", c.randomness);
     c.scan_pause_s = cfg.get_float("planner.scan_pause", c.scan_pause_s);
+    c.stuck_gain = cfg.get_float("planner.stuck_gain", c.stuck_gain);
+    c.patience_s = cfg.get_float("planner.patience", c.patience_s);
+    c.merge_radius_m = cfg.get_float("planner.merge_radius", c.merge_radius_m);
+    c.merge_heading_rad = cfg.get_float("planner.merge_heading_deg", c.merge_heading_rad * kRadToDeg) * kDegToRad;
+    c.navigator = GoalNavigatorConfig::from(cfg);
     return c;
 }
 
@@ -34,6 +39,11 @@ void InfoGainPlanner::reset(std::uint64_t seed) {
     visited_.clear();
     candidates_.clear();
     last_visit_s_ = -1e9;
+    navigator_.reset();
+    stays_ = 0;
+    progress_ref_ = 1e9f;
+    progress_s_ = 0.0;
+    committed_goal_ = -1;
 }
 
 void InfoGainPlanner::sample_hypotheses(const Map2D& map, const PoseEstimate& estimate,
@@ -41,22 +51,28 @@ void InfoGainPlanner::sample_hypotheses(const Map2D& map, const PoseEstimate& es
     hyps_.clear();
     const int m = config_.hypotheses;
     if (diagnostics && !diagnostics->particles.empty()) {
-        // Systematic sample of the particle set; repeated draws of one
-        // particle merge into a heavier hypothesis.
+        // Systematic sample of the particle set. Draws that land on (nearly)
+        // the same pose merge into a heavier hypothesis: after resampling the
+        // particles are jittered copies, and telling copies apart is not
+        // worth a journey.
         const auto& ps = diagnostics->particles;
         const float step = 1.0f / static_cast<float>(m);
         float u = rng_.uniform() * step;
         float c = ps[0].weight;
         std::size_t j = 0;
-        std::size_t last = ps.size();
         for (int i = 0; i < m; ++i) {
             while (u > c && j + 1 < ps.size()) c += ps[++j].weight;
-            if (j == last) {
-                hyps_.back().weight += step;
-            } else {
-                hyps_.push_back({ps[j].pose, step});
-                last = j;
+            const Pose2D& p = ps[j].pose;
+            Hyp* same = nullptr;
+            for (Hyp& h : hyps_) {
+                if (distance(h.pose.position(), p.position()) < config_.merge_radius_m &&
+                    std::fabs(angle_diff(h.pose.heading_rad, p.heading_rad)) < config_.merge_heading_rad) {
+                    same = &h;
+                    break;
+                }
             }
+            if (same) same->weight += step;
+            else hyps_.push_back({p, step});
             u += step;
         }
     } else if (estimate.valid && estimate.has_covariance) {
@@ -74,20 +90,20 @@ void InfoGainPlanner::sample_hypotheses(const Map2D& map, const PoseEstimate& es
     }
 }
 
-float InfoGainPlanner::scan_clearance(const RgbLidarScan* scan, float direction, float radius) const {
-    if (!scan || !scan->valid) return 0.6f;  // blind: only creep
-    float best = scan->max_range_m;
-    for (const LidarReturn& r : scan->returns) {
-        const float d = std::fabs(angle_diff(r.angle_rad, direction));
-        if (d > 0.5f * kPi) continue;
-        const float range = r.hit ? r.range_m : scan->max_range_m;
-        // A return at angle d from the travel direction blocks the swept
-        // corridor if its lateral offset is within the robot radius.
-        const float lateral = range * std::sin(d);
-        if (lateral > radius + 0.05f) continue;
-        best = std::min(best, range * std::cos(d));
+float InfoGainPlanner::effective_hypotheses(const LocalizationDiagnostics* diagnostics, float h_sample) const {
+    // The localizer's own clusters, when it has them, are a better count than
+    // the sample: resampled particles are all distinct, even when they are
+    // jittered copies of one pose. Unclustered mass counts as widely spread.
+    if (!diagnostics || diagnostics->hypotheses.empty()) return std::exp(h_sample);
+    float h = 0.0f;
+    float rest = 1.0f;
+    for (const WeightedPose& c : diagnostics->hypotheses) {
+        if (c.weight <= 0.0f) continue;
+        h -= c.weight * std::log(c.weight);
+        rest -= c.weight;
     }
-    return best;
+    if (rest > 1e-3f) h += rest * std::log(static_cast<float>(config_.hypotheses) / rest);
+    return std::exp(h);
 }
 
 MotionPlan InfoGainPlanner::choose_action(const Map2D& map, const PoseEstimate& estimate,
@@ -95,6 +111,8 @@ MotionPlan InfoGainPlanner::choose_action(const Map2D& map, const PoseEstimate& 
                                           const PlannerContext& ctx) {
     sample_hypotheses(map, estimate, diagnostics);
     candidates_.clear();
+
+    navigator_.record(ctx);
 
     // Odometry-frame breadcrumb trail for the novelty bonus.
     if (ctx.time_s - last_visit_s_ > 1.0) {
@@ -231,8 +249,38 @@ MotionPlan InfoGainPlanner::choose_action(const Map2D& map, const PoseEstimate& 
     plan.expected_gain = best_raw_gain;
     plan.pause_s = config_.scan_pause_s;
 
-    const float effective_hyps = std::exp(h_prior);
+    const float effective_hyps = effective_hypotheses(diagnostics, h_prior);
     const bool short_sighted = max_range < 0.75f * ctx.nominal_max_range_m;
+    stays_ = best.forward_m <= 0.0f ? stays_ + 1 : 0;
+
+    // Progress is the belief narrowing (or widening: new evidence arrived).
+    if (effective_hyps < 0.75f * progress_ref_ || effective_hyps > 1.5f * progress_ref_) {
+        progress_ref_ = effective_hyps;
+        progress_s_ = ctx.time_s;
+    }
+    if (ctx.time_s - progress_s_ > config_.patience_s) {
+        navigator_.drop_goal();
+        committed_goal_ = navigator_.goals_chosen() + 1;
+        progress_ref_ = effective_hyps;
+        progress_s_ = ctx.time_s;
+    }
+    const bool committed = navigator_.goals_chosen() < committed_goal_ ||
+                           (navigator_.goals_chosen() == committed_goal_ && navigator_.has_goal());
+
+    // Nothing within one move would tell the hypotheses apart, it keeps
+    // wanting to stand still, or it is getting nowhere: travel somewhere new.
+    if ((committed || best_raw_gain < config_.stuck_gain || stays_ > 2) && estimate.valid) {
+        MotionPlan go;
+        go.pause_s = config_.scan_pause_s;
+        if (navigator_.step(map, estimate.pose, diagnostics, ctx, &go)) {
+            if (go.forward_m > 0.0f) stays_ = 0;
+            if (effective_hyps > 1.6f) go.kind = MotionPlan::Kind::Explore;
+            for (auto& c : candidates_) c.chosen = false;
+            return go;
+        }
+    }
+    navigator_.drop_goal();
+
     if (best.forward_m <= 0.0f) {
         plan.kind = MotionPlan::Kind::Scan;
         plan.pause_s = config_.scan_pause_s * 2.0f;

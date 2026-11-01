@@ -16,6 +16,8 @@ constexpr Color kScreen{30, 36, 60, 255};
 constexpr Color kOutline{30, 28, 40, 255};
 constexpr Color kAccent{255, 196, 60, 255};
 constexpr Color kAntennaTip{255, 98, 88, 255};
+constexpr Color kCloth{60, 58, 84, 255};
+constexpr Color kRope{196, 142, 88, 255};
 constexpr float kHull = 0.014f;
 
 struct Painter {
@@ -201,6 +203,21 @@ void RobotModel::draw_parts(Vec2 position, float heading, Face face, const WoboS
         p.ball({0.03f + swing, 0.135f, side * 0.162f}, 0.03f, kJoint);
     }
 
+    if (style.tied_up) {
+        // Two loops of rope round the body that pin the arms, and a cross on
+        // the chest.
+        const float rx = 0.153f;
+        const float rz = 0.18f;
+        for (float y : {0.155f, 0.225f}) {
+            p.cyl({-rx, y, -rz}, {rx, y, -rz}, 0.013f, kRope);
+            p.cyl({-rx, y, rz}, {rx, y, rz}, 0.013f, kRope);
+            p.cyl({rx, y, -rz}, {rx, y, rz}, 0.013f, kRope);
+            p.cyl({-rx, y, -rz}, {-rx, y, rz}, 0.013f, kRope);
+        }
+        p.cyl({rx, 0.155f, -0.1f}, {rx, 0.225f, 0.1f}, 0.011f, kRope);
+        p.cyl({rx, 0.225f, -0.1f}, {rx, 0.155f, 0.1f}, 0.011f, kRope);
+    }
+
     // Neck and head (tilted a touch when confused or thinking).
     p.cyl({0.0f, 0.25f, 0.0f}, {0.0f, 0.29f, 0.0f}, 0.04f, kJoint);
     rlPushMatrix();
@@ -208,6 +225,19 @@ void RobotModel::draw_parts(Vec2 position, float heading, Face face, const WoboS
     rlRotatef(head_tilt(face), 1, 0, 0);
     p.box({0.0f, 0.0f, 0.0f}, {0.25f, 0.17f, 0.28f}, kBody);
     if (!hull) p.box({0.127f, 0.0f, 0.0f}, {0.008f, 0.125f, 0.225f}, kScreen);
+    if (style.blindfold) {
+        // A band over the eyes (proud of the face so the eyes stay hidden),
+        // knotted at the side with two tails.
+        p.box({0.0f, 0.015f, 0.0f}, {0.29f, 0.08f, 0.30f}, kCloth);
+        p.box({-0.07f, 0.015f, -0.158f}, {0.05f, 0.05f, 0.03f}, kCloth);
+        for (float angle : {25.0f, 60.0f}) {
+            rlPushMatrix();
+            rlTranslatef(-0.08f, 0.0f, -0.165f);
+            rlRotatef(angle, 0, 0, 1);
+            p.box({0.0f, -0.05f, 0.0f}, {0.045f, 0.1f, 0.012f}, kCloth);
+            rlPopMatrix();
+        }
+    }
     // Ear bolts.
     for (float side : {-1.0f, 1.0f}) {
         p.cyl({0.0f, 0.0f, side * 0.14f}, {0.0f, 0.0f, side * 0.165f}, 0.035f, kJoint);
@@ -256,6 +286,7 @@ void RobotModel::draw_face(Face face, const WoboStyle& style) const {
     const bool blinking = std::fmod(time_ + 0.7f, 3.7f) < 0.12f;
 
     for (float side : {-1.0f, 1.0f}) {
+        if (style.blindfold) break;  // nothing to see under the cloth
         const float z = side * ez + glance;
         switch (face) {
             case Face::Curious:

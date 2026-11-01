@@ -15,6 +15,10 @@ namespace wobo::ui {
 // The wordmark sits top left; along the bottom, every map as a card, with
 // Play and How to play at the end of the row. A screen too narrow for the
 // row shows only the chosen map's card, between previous / next arrows.
+// The "where's WOBO?" wordmark with its top-left at (x, y); `big` is the
+// size of WOBO. Returns the y just below it.
+float wordmark(float x, float y, float big, float s, float time_s);
+
 struct TitleLayout {
     Rectangle title{};              // the wordmark block
     Rectangle panel{};              // the whole bottom block (description, cards, buttons)

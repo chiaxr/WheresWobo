@@ -93,20 +93,23 @@ TitleLayout layout_title(int w, int h, float s, int map_count) {
     return l;
 }
 
-void draw_title(const TitleLayout& l, float s, int w, int h, const std::vector<MapInfo>& maps, int selected,
-                const std::vector<std::string>& bests, Vector2 mouse, float time_s) {
-    (void)h;
-    // Wordmark: a quiet "where's" over a big WOBO, its question mark bobbing.
-    const float big = std::min(112.0f * s, w * 0.15f);
+float wordmark(float x, float y, float big, float s, float time_s) {
+    // A quiet "where's" over a big WOBO, its question mark bobbing.
     const float small = big * 0.3f;
-    const float x = l.title.x;
-    float y = l.title.y;
     text("where's", x + big * 0.03f, y, small, kMuted);
     y += small * 0.95f;
     text("WOBO", x, y, big, kInk, Weight::Bold);
     const float bob = std::sin(time_s * 2.2f) * 3.0f * s;
     text("?", x + measure("WOBO", big, Weight::Bold) + big * 0.02f, y + bob, big, kEnergy, Weight::Bold);
-    y += big * 1.02f;
+    return y + big * 1.02f;
+}
+
+void draw_title(const TitleLayout& l, float s, int w, int h, const std::vector<MapInfo>& maps, int selected,
+                const std::vector<std::string>& bests, Vector2 mouse, float time_s) {
+    (void)h;
+    const float big = std::min(112.0f * s, w * 0.15f);
+    const float x = l.title.x;
+    const float y = wordmark(x, l.title.y, big, s, time_s);
     text("You've kidnapped the robot. Keep it lost.", x + big * 0.03f, y, 16.0f * s, kMuted);
 
     if (maps.empty()) return;

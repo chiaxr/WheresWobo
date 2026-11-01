@@ -3,7 +3,9 @@
 // Baseline localizer: Monte Carlo localization (particle filter) with a
 // range + colour beam likelihood, and augmented-MCL random particle
 // injection (short- vs long-term likelihood averages) so it can recover
-// from being kidnapped.
+// from being kidnapped. Injected particles are the best fit to the current
+// scan among a few random poses (sensor-resetting localization), so a filter
+// that converged on the wrong place re-seeds where the scan says it could be.
 
 #include <vector>
 
@@ -39,6 +41,7 @@ struct ParticleFilterConfig {
     float alpha_slow = 0.02f;
     float alpha_fast = 0.3f;
     float max_injection = 0.08f;
+    int inject_candidates = 8;    // random poses tried per injected particle (1 = plain uniform)
     float resample_ess = 0.5f;
 
     // Clustering for the estimate and hypotheses.
@@ -62,7 +65,15 @@ public:
     const ParticleFilterConfig& config() const { return config_; }
 
 private:
+    struct Beam {
+        float angle;
+        float range;
+        bool hit;
+        Rgb rgb;
+    };
+
     void resample(float inject_fraction);
+    float log_likelihood(const Pose2D& pose) const;  // against beams_
     void update_estimate();
     Pose2D sample_prior();
 
@@ -77,6 +88,8 @@ private:
     std::vector<WeightedPose> scratch_;
     std::vector<float> histogram_;
     std::vector<unsigned char> claimed_;
+    std::vector<Beam> beams_;  // the beams of the latest scan in use
+    float max_range_ = 0.0f;
 
     float w_slow_ = 0.0f;
     float w_fast_ = 0.0f;

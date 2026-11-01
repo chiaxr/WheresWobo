@@ -1,5 +1,6 @@
 #include "localization/localizer_registry.h"
 
+#include "localization/histogram_filter.h"
 #include "localization/particle_filter.h"
 
 namespace wobo {
@@ -15,6 +16,10 @@ const Entry kLocalizers[] = {
     {"particle_filter",
      [](const Config& cfg) -> std::unique_ptr<ILocalizer> {
          return std::make_unique<ParticleFilter>(ParticleFilterConfig::from(cfg));
+     }},
+    {"histogram_filter",
+     [](const Config& cfg) -> std::unique_ptr<ILocalizer> {
+         return std::make_unique<HistogramFilter>(HistogramFilterConfig::from(cfg));
      }},
 };
 

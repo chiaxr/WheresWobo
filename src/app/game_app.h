@@ -26,11 +26,24 @@
 
 namespace wobo {
 
+// Command-line modes of the desktop build (see src/main.cpp).
+struct LaunchOptions {
+    int width = 1280;
+    int height = 720;
+    // --profile: play every map uncapped (no vsync) for this many seconds
+    // each, plus the title screen, then print frame-time stats and quit.
+    float profile_s = 0.0f;
+    // --poster: render the README / social-preview poster (the wordmark
+    // beside a kidnapped Wobo) to this PNG at width x height, then quit.
+    std::string poster_path;
+};
+
 class GameApp {
 public:
-    void init();
+    void init(const LaunchOptions& options = {});
     void frame();
     void shutdown();
+    bool finished() const { return finished_; }
 
     // Paused from outside (the web build pauses in portrait orientation).
     void set_paused(bool paused) { external_pause_ = paused; }
@@ -66,6 +79,9 @@ private:
     void step_run(RunDirector& run, FixedStepClock& clock, float dt, bool is_player_run);
     void handle_events(RunDirector& run, bool is_player_run);
     void toast(std::string text, Color colour);
+
+    void profile_frame();
+    void render_poster();
 
     void draw();
     void draw_world(const RunDirector& run, float alpha, bool overlays);
@@ -130,6 +146,18 @@ private:
     bool new_best_ = false;
 
     std::map<std::string, Best> best_;
+
+    // --profile: the scene being timed (-1 before the first), its elapsed
+    // real time, and its frame times after a one-second warm-up.
+    struct Profile {
+        float seconds = 0.0f;
+        int scene = -1;
+        float t = 0.0f;
+        std::vector<float> samples;
+    } profile_;
+    bool finished_ = false;
+
+    LaunchOptions options_;
 };
 
 }  // namespace wobo
