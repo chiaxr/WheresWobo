@@ -27,15 +27,19 @@ Font g_display{};
 bool g_loaded = false;
 
 Font load(const char* name, int size = kAtlasSize, const char* chars = nullptr) {
-    int codepoints[64];
+    int codepoints[128];
     int count = 0;
     if (chars) {
         for (const char* c = chars; *c && count < 64; ++c) codepoints[count++] = static_cast<unsigned char>(*c);
+    } else {
+        // ASCII, and the accented letters in map names (Königsberg).
+        for (int c = 32; c < 127; ++c) codepoints[count++] = c;
+        codepoints[count++] = 0xF6;
     }
     for (std::size_t i = 0; i < wobo_font_files_count; ++i) {
         if (std::strcmp(wobo_font_files[i].path, name) == 0) {
             Font f = LoadFontFromMemory(".ttf", wobo_font_files[i].data, static_cast<int>(wobo_font_files[i].size),
-                                        size, chars ? codepoints : nullptr, count);
+                                        size, codepoints, count);
             SetTextureFilter(f.texture, TEXTURE_FILTER_BILINEAR);
             return f;
         }

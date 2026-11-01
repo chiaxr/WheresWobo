@@ -62,7 +62,7 @@ TEST("teleport: moves the true pose but not the robot's software") {
     cfg.set("action.kidnap.owned", "1");
     RunDirector run(cfg);
     std::string err;
-    REQUIRE(run.start("workshop", 5, &err));
+    REQUIRE(run.start("barn", 5, &err));
     for (int i = 0; i < 90; ++i) run.step();
 
     const Pose2D from = run.sim().true_pose();

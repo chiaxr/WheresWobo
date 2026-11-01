@@ -36,6 +36,9 @@ struct LaunchOptions {
     // --poster: render the README / social-preview poster (the wordmark
     // beside a kidnapped Wobo) to this PNG at width x height, then quit.
     std::string poster_path;
+    // --shots: render every map (the whole board, and a close-up of its
+    // focus) to PNGs in this directory at width x height, then quit.
+    std::string shots_dir;
 };
 
 class GameApp {
@@ -82,6 +85,7 @@ private:
 
     void profile_frame();
     void render_poster();
+    void render_shots();
 
     void draw();
     void draw_world(const RunDirector& run, float alpha, bool overlays);

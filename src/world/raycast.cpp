@@ -17,6 +17,21 @@ RayHit cast_ray(const Map2D& map, float x, float z, float angle_rad, float max_r
     const float dz = std::sin(angle_rad);
     constexpr float inf = std::numeric_limits<float>::infinity();
 
+    // The nearest shape hit so far; the walk stops once it passes it. A
+    // shape spans several cells, so it may be tested more than once.
+    const Vec2 o{x, z};
+    const Vec2 d{dx, dz};
+    RayHit best{false, max_range, 0};
+    const auto test = [&](const Shape& s) {
+        float t;
+        if (s.ray(o, d, best.range, &t) && (!best.hit || t < best.range)) best = {true, t, s.material};
+    };
+    for (const Shape& m : map.movers()) test(m);
+    const auto test_cell = [&](int i) {
+        for (int s : map.shapes_in(i)) test(map.shapes()[static_cast<std::size_t>(s)]);
+    };
+    if (map.in_bounds(cx, cz)) test_cell(map.index(cx, cz));
+
     const int step_x = dx > 0.0f ? 1 : -1;
     const int step_z = dz > 0.0f ? 1 : -1;
     const float t_delta_x = dx != 0.0f ? std::fabs(cs / dx) : inf;
@@ -38,10 +53,11 @@ RayHit cast_ray(const Map2D& map, float x, float z, float angle_rad, float max_r
             t_max_z += t_delta_z;
             cz += step_z;
         }
-        if (t > max_range) return {false, max_range, 0};
+        if (t > best.range) return best;
         if (map.solid(cx, cz)) {
             return {true, t, map.material_index(cx, cz)};
         }
+        test_cell(map.index(cx, cz));
     }
 }
 

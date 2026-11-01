@@ -15,6 +15,7 @@
 #include "rendering/primitives.h"
 #include "ui/card_screen.h"
 #include "ui/menus.h"
+#include "rendering/mover_models.h"
 #include "ui/poster.h"
 #include "ui/ui_text.h"
 #include "ui/widgets.h"
@@ -58,7 +59,7 @@ void GameApp::init(const LaunchOptions& options) {
     options_ = options;
     profile_.seconds = options.profile_s;
     const bool profiling = profile_.seconds > 0.0f;
-    const bool poster = !options.poster_path.empty();
+    const bool poster = !options.poster_path.empty() || !options.shots_dir.empty();
     // Profiling runs uncapped, so frame times show the real cost. A poster is
     // drawn offscreen, so its window stays hidden.
     SetConfigFlags(FLAG_MSAA_4X_HINT | (poster ? FLAG_WINDOW_HIDDEN : FLAG_WINDOW_RESIZABLE) |
@@ -83,7 +84,7 @@ void GameApp::init(const LaunchOptions& options) {
 }
 
 void GameApp::shutdown() {
-    if (options_.poster_path.empty()) save_progress();
+    if (options_.poster_path.empty() && options_.shots_dir.empty()) save_progress();
     iso_.unload();
     toon_.unload();
     ui::unload_fonts();
@@ -232,6 +233,11 @@ void GameApp::frame() {
     if (profile_.seconds > 0.0f) profile_frame();
     if (!options_.poster_path.empty()) {
         render_poster();
+        finished_ = true;
+        return;
+    }
+    if (!options_.shots_dir.empty()) {
+        render_shots();
         finished_ = true;
         return;
     }
@@ -696,6 +702,41 @@ void GameApp::render_poster() {
     UnloadRenderTexture(art);
 }
 
+// --shots
+void GameApp::render_shots() {
+    const int w = options_.width, h = options_.height;
+    RenderTexture2D target = LoadRenderTexture(w, h);
+    screen_ = Screen::Playing;
+    for (const MapInfo& info : maps_) {
+        run_ = std::make_unique<RunDirector>(config_);
+        std::string err;
+        if (!run_->start(info.id, 3, &err)) continue;
+        // A little way in, so Wobo and the movers are about their business.
+        for (int i = 0; i < static_cast<int>(20.0 / run_->step_s()) && run_->phase() == RunPhase::Playing; ++i) {
+            run_->step();
+        }
+        iso_.build(run_->map(), toon_);
+        bound_map_.clear();
+        for (int pass = 0; pass < (info.has_focus ? 2 : 1); ++pass) {
+            camera_.set_insets(0.0f, 0.0f);
+            camera_.fit(run_->map().world_width(), run_->map().world_depth(), w, h);
+            if (pass == 1) camera_.frame_on(info.focus, 4.0f);
+            BeginTextureMode(target);
+            ClearBackground(ui::kBackground);
+            draw_world(*run_, 1.0f, false);
+            EndTextureMode();
+            Image img = LoadImageFromTexture(target.texture);
+            ImageFlipVertical(&img);
+            ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8);
+            const std::string path = options_.shots_dir + "/" + info.id + (pass ? "_close" : "") + ".png";
+            if (ExportImage(img, path.c_str())) std::printf("Shot: %s\n", path.c_str());
+            UnloadImage(img);
+        }
+    }
+    UnloadRenderTexture(target);
+    run_.reset();
+}
+
 // ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
@@ -786,6 +827,13 @@ void GameApp::draw_world(const RunDirector& run, float alpha, bool overlays) {
             if (aiming_ || has_hover_) overlay::target_marker(aim_, hover_valid_, time_);
         }
         toon_.set_flat(false);
+    }
+
+    // The movers, where they are between simulation steps.
+    for (const Mover& m : run.movers()) {
+        const Pose2D p{lerpf(m.prev_pose.x, m.pose.x, alpha), lerpf(m.prev_pose.z, m.pose.z, alpha),
+                       wrap_angle(m.prev_pose.heading_rad + angle_diff(m.pose.heading_rad, m.prev_pose.heading_rad) * alpha)};
+        draw_mover(toon_, m, p, time_);
     }
 
     wobo_.draw_xray(toon_, wobo.position(), wobo.heading_rad + spin, Color{255, 255, 255, 90}, look.lift);

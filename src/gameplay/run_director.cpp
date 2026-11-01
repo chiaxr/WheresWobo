@@ -19,8 +19,8 @@ Config load_game_config() {
 RunDirector::RunDirector(Config config) : config_(std::move(config)) {}
 
 bool RunDirector::start(const std::string& map_id, std::uint64_t seed, std::string* error) {
-    auto map = load_map(map_id, error);
-    if (!map) return false;
+    auto level = load_level(map_id, error);
+    if (!level) return false;
 
     auto localizer = make_localizer(config_.get_string("localizer.type", "particle_filter"), config_);
     auto planner = make_planner(config_.get_string("planner.type", "info_gain"), config_);
@@ -31,21 +31,32 @@ bool RunDirector::start(const std::string& map_id, std::uint64_t seed, std::stri
 
     seed_ = seed;
     map_id_ = map_id;
-    map_ = std::make_unique<Map2D>(std::move(*map));
+    map_ = std::make_unique<Map2D>(std::move(level->map));
     sim_config_ = SimConfig::from(config_);
+    const float radius = sim_config_.dynamics.radius_m;
 
     // The physical world starts as the known map, plus the road block's
-    // material for when one is dropped.
+    // material for when one is dropped, and the movers'.
     world_ = std::make_unique<Map2D>(*map_);
     block_ = std::nullopt;
     block_material_ = world_->add_material(
-        Material{"road_block", "Road block", Rgb{255, 128, 32}, true, 0.5f, Pattern::Stripes});
-    floor_label_ = label_floor(*map_);
+        Material{"road_block", "Road block", Rgb{255, 128, 32}, true, 0.5f, Pattern::Stripes, ""});
+    std::vector<std::uint8_t> mover_materials;
+    for (const MoverSpec& m : level->movers) {
+        mover_materials.push_back(world_->add_material(
+            Material{"mover_" + m.kind, m.kind, mover_colour(m.kind), true, 1.0f, Pattern::None, ""}));
+    }
+    movers_.reset(level->movers, mover_materials, seed);
+    world_->set_movers(movers_.discs());
+    floor_label_ = label_floor(*map_, {}, radius);
     colour_matters_ = colourful_wall_share(*map_) >= config_.get_float("action.colour.min_colour_share", 0.1f);
-    block_fits_ = barrier_fits_somewhere(*map_, floor_label_, 3);
+    block_fits_ = barrier_fits_somewhere(*map_, floor_label_, 3, radius);
 
     Rng start_rng(derive_seed(seed, "start"));
-    const Pose2D start_pose = map_->sample_valid_pose(start_rng, sim_config_.dynamics.radius_m);
+    Pose2D start_pose = map_->sample_valid_pose(start_rng, radius);
+    for (int i = 0; i < 100 && !world_->valid_pose(start_pose, radius + 0.2f); ++i) {
+        start_pose = map_->sample_valid_pose(start_rng, radius);
+    }
     sim_ = std::make_unique<WorldSimulation>(*world_, sim_config_, seed, start_pose);
 
     // The prior is what the robot knows: by default nothing (uniform).
@@ -107,6 +118,12 @@ void RunDirector::step() {
     modifiers_.range_noise_add += k * config_.get_float("calibration.range_noise", 0.0f);
     modifiers_.colour_noise_add += k * config_.get_float("calibration.colour_noise", 0.0f);
     modifiers_.odom_noise_scale *= 1.0f + k * config_.get_float("calibration.odometry_noise", 0.0f);
+
+    // The movers move first (in the world without themselves), then Wobo
+    // meets them where they are.
+    world_->set_movers({});
+    movers_.step(dt, *world_, sim_->true_pose(), sim_config_.dynamics.radius_m);
+    world_->set_movers(movers_.discs());
 
     // Gummy Wheels slows Wobo for real; its software asked for full speed.
     MotionCommand drive = command_;
@@ -221,8 +238,21 @@ ActivateResult RunDirector::check_block(const RoadBlock& block) const {
             const float dz = p.z - clampf(p.z, minz, minz + cs);
             if (dx * dx + dz * dz < r * r) return ActivateResult::TooClose;
         }
+        // Nor on a mover.
+        for (const Mover& m : movers_.movers()) {
+            const Vec2 q = m.pose.position();
+            for (int i : block.cells) {
+                const float minx = (i % w) * cs;
+                const float minz = (i / w) * cs;
+                const float dx = q.x - clampf(q.x, minx, minx + cs);
+                const float dz = q.z - clampf(q.z, minz, minz + cs);
+                if (dx * dx + dz * dz < (m.radius + 0.05f) * (m.radius + 0.05f)) return ActivateResult::TooClose;
+            }
+        }
     }
-    if (!stays_connected(*map_, floor_label_, block.cells)) return ActivateResult::CutsOff;
+    if (!stays_connected(*map_, floor_label_, block.cells, sim_config_.dynamics.radius_m)) {
+        return ActivateResult::CutsOff;
+    }
     return ActivateResult::Ok;
 }
 

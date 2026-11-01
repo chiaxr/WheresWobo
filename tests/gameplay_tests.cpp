@@ -161,7 +161,7 @@ TEST("cards: same seed and picks reproduce the same drafts") {
         Config cfg = load_game_config();
         cfg.set("run.hour_length", "5");
         RunDirector run(cfg);
-        run.start("offices", seed);
+        run.start("office", seed);
         std::vector<std::string> seen;
         for (int i = 0; i < 30 * 60 && run.phase() != RunPhase::Over; ++i) {
             run.step();
@@ -182,7 +182,7 @@ TEST("cards: drafting pauses the simulation and energy") {
     Config cfg = load_game_config();
     cfg.set("run.hour_length", "5");
     RunDirector run(cfg);
-    REQUIRE(run.start("offices", 3));
+    REQUIRE(run.start("office", 3));
     for (int i = 0; i < 30 * 10 && run.phase() == RunPhase::Playing; ++i) run.step();
     REQUIRE(run.phase() == RunPhase::Drafting);
     REQUIRE(run.offer().size() == 3);
@@ -200,7 +200,7 @@ TEST("cards: offers are distinct and basic actions stay owned") {
     Config cfg = load_game_config();
     cfg.set("run.hour_length", "5");
     RunDirector run(cfg);
-    REQUIRE(run.start("offices", 12));
+    REQUIRE(run.start("office", 12));
     int drafts = 0;
     for (int i = 0; i < 30 * 200 && run.phase() != RunPhase::Over; ++i) {
         run.step();
@@ -219,7 +219,7 @@ TEST("cards: offers are distinct and basic actions stay owned") {
 
 TEST("kidnap: not owned until its card is drafted") {
     RunDirector run(load_game_config());
-    REQUIRE(run.start("workshop", 4));
+    REQUIRE(run.start("barn", 4));
     CHECK(!run.owns(ActionId::Kidnap));
     CHECK(run.activate(ActionId::Kidnap, run.sim().true_pose()) == ActivateResult::NotOwned);
     CardDraftSystem cards;
@@ -232,7 +232,7 @@ TEST("kidnap: not owned until its card is drafted") {
 TEST("cards: effects apply to stats") {
     Config cfg = load_game_config();
     RunDirector run(cfg);
-    REQUIRE(run.start("workshop", 1));
+    REQUIRE(run.start("barn", 1));
     CardDraftSystem cards;
     cards.reset(load_cards(), 1);
     CHECK(cards.find("colour") != nullptr);
@@ -252,7 +252,7 @@ TEST("kidnap: rejects invalid and too-close destinations") {
     cfg.set("energy.start", "100");
     cfg.set("action.kidnap.owned", "1");
     RunDirector run(cfg);
-    REQUIRE(run.start("workshop", 2));
+    REQUIRE(run.start("barn", 2));
     const Pose2D here = run.sim().true_pose();
     CHECK(run.activate(ActionId::Kidnap, here) == ActivateResult::TooClose);
     CHECK(run.activate(ActionId::Kidnap, Pose2D{0.1f, 0.1f, 0.0f}) == ActivateResult::InvalidTarget);
@@ -276,20 +276,50 @@ TEST("gummy wheels: slows Wobo for real while it lasts") {
 }
 
 TEST("map traits: reachability and colour on the shipped maps") {
+    const float radius = load_game_config().get_float("robot.radius", 0.2f);
     for (const MapInfo& m : list_maps()) {
         const auto map = load_map(m.id);
         REQUIRE(map.has_value());
-        const auto labels = label_floor(*map);
-        CHECK(stays_connected(*map, labels, {}));
+        // One floor: wherever Wobo fits, it can drive to anywhere else it fits.
+        const auto labels = label_floor(*map, {}, radius);
+        int components = 0;
+        for (int l : labels) components = std::max(components, l + 1);
+        CHECK(components == 1);
         RunDirector run(load_game_config());
         REQUIRE(run.start(m.id, 1));
         std::printf("    %-10s colourful wall share %.2f, colour card %s, road block fits %s\n", m.id.c_str(),
                     colourful_wall_share(*map), run.suits_map("colour") ? "yes" : "no",
                     run.suits_map("block") ? "yes" : "no");
     }
-    // Greyscale Yard is grey by design; the gallery is all about colour.
-    CHECK(colourful_wall_share(*load_map("greyscale")) < 0.05f);
+    // The gallery is all about colour.
     CHECK(colourful_wall_share(*load_map("gallery")) > 0.3f);
+}
+
+TEST("movers: walk their rounds, and the walker never finishes") {
+    Config cfg = load_game_config();
+    cfg.set("referee.stability", "100000");  // keep Wobo lost: the run never ends
+    for (const char* id : {"gallery", "barn", "konigsberg"}) {
+        RunDirector run(cfg);
+        REQUIRE(run.start(id, 2));
+        REQUIRE(!run.movers().empty());
+        const int steps = static_cast<int>(180.0 / run.step_s());
+        for (int i = 0; i < steps && run.phase() != RunPhase::Over; ++i) {
+            run.step();
+            if (run.phase() == RunPhase::Drafting) run.skip_draft();
+            // Never inside Wobo.
+            const Mover& m = run.movers()[0];
+            REQUIRE(distance(m.pose.position(), run.sim().true_pose().position()) >
+                    m.radius + run.sim().config().dynamics.radius_m - 0.02f);
+        }
+        const Mover& m = run.movers()[0];
+        std::printf("    %-10s %s walked %.0f m%s\n", id, m.kind.c_str(), m.stride_m,
+                    m.kind == "walker" ? (", best " + std::to_string(m.best_crossings) + " bridges").c_str() : "");
+        CHECK(m.stride_m > 15.0f);
+        if (m.kind == "walker") {
+            CHECK(m.best_crossings >= 2);
+            CHECK(m.best_crossings < 7);
+        }
+    }
 }
 
 TEST("road block: only in the world, never cutting the map, and it clears") {
@@ -297,13 +327,13 @@ TEST("road block: only in the world, never cutting the map, and it clears") {
     cfg.set("energy.start", "100");
     cfg.set("action.block.owned", "1");
     RunDirector run(cfg);
-    REQUIRE(run.start("offices", 3));
+    REQUIRE(run.start("office", 3));
     const Map2D& map = run.map();
 
-    // Across an office doorway (row 6, the gap at x = 3) the barrier would
+    // Across an office doorway (row 6, the gap at x = 11) the barrier would
     // shut the office off; the hallway's 3-cell width cannot be closed either.
-    const Vec2 door = map.cell_center(3, 6);
-    CHECK(map.solid(2, 6) && map.solid(4, 6) && !map.solid(3, 6));
+    const Vec2 door = map.cell_center(11, 6);
+    CHECK(map.solid(10, 6) && map.solid(12, 6) && !map.solid(11, 6));
     CHECK(run.check_target(ActionId::Block, {door.x, door.z, kPi * 0.5f}) == ActivateResult::CutsOff);
     const Vec2 hall = map.cell_center(20, 8);
     CHECK(run.check_target(ActionId::Block, {hall.x, hall.z, kPi * 0.5f}) == ActivateResult::CutsOff);
@@ -330,17 +360,20 @@ TEST("road block: only in the world, never cutting the map, and it clears") {
 }
 
 TEST("cards: map-specific abilities are only offered where they work") {
+    // Every shipped map has some colour, so raise the bar until the office
+    // (blackboards and desks on grey plaster) falls short of it.
     Config cfg = load_game_config();
     cfg.set("run.hour_length", "5");
+    cfg.set("action.colour.min_colour_share", "0.3");
     RunDirector grey(cfg);
-    REQUIRE(grey.start("greyscale", 1));
+    REQUIRE(grey.start("office", 1));
     CHECK(!grey.suits_map("colour"));
     RunDirector gallery(cfg);
     REQUIRE(gallery.start("gallery", 1));
     CHECK(gallery.suits_map("colour"));
     CHECK(gallery.suits_map("block"));
 
-    // Over many drafts on the yard, no Colour Blind card (or its upgrade);
+    // Over many drafts on the office, no Colour Blind card (or its upgrade);
     // on the gallery it turns up.
     const auto offered = [](const RunDirector& run, bool own_colour) {
         CardDraftSystem cards;

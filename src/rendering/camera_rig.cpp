@@ -115,7 +115,10 @@ void CameraRig::zoom_at(float factor, Vector2 screen_point, int screen_w, int sc
     (void)screen_h;
     Vec2 before, after;
     const bool had = ground_under(camera_, screen_point, &before);
-    zoom_ = zoom_goal_ = clampf(zoom_goal_ * factor, 0.25f, 1.5f);
+    // In as far as a quarter of the whole map, or a view about 2.5 m tall on
+    // big maps, whichever is closer.
+    const float closest = std::min(0.25f, 2.5f / std::max(fit_height_, 1e-3f));
+    zoom_ = zoom_goal_ = clampf(zoom_goal_ * factor, closest, 1.5f);
     target_ = target_goal_;
     rebuild();
     // Keep the point under the cursor fixed.
@@ -128,6 +131,12 @@ void CameraRig::zoom_at(float factor, Vector2 screen_point, int screen_w, int sc
 }
 
 void CameraRig::focus(Vec2 p) { target_goal_ = p; }
+
+void CameraRig::frame_on(Vec2 p, float view_height) {
+    target_ = target_goal_ = p;
+    zoom_ = zoom_goal_ = view_height / std::max(fit_height_, 1e-3f);
+    rebuild();
+}
 
 void CameraRig::rebuild() {
     const Vector3 t{target_.x, 0.0f, target_.z};

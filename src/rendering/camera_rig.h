@@ -21,6 +21,8 @@ public:
     void pan_pixels(Vector2 delta, int screen_h);
     void zoom_at(float factor, Vector2 screen_point, int screen_w, int screen_h);
     void focus(Vec2 world_point);
+    // Jump (no easing) to look at `p` with a view `view_height` metres tall.
+    void frame_on(Vec2 p, float view_height);
     void set_top_down(bool top_down) { top_down_ = top_down; }
     bool top_down() const { return top_down_; }
     // Shift the framing so a band of the screen (e.g. under the HUD) is not

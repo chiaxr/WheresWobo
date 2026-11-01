@@ -9,7 +9,8 @@
 // There are two copies of the map: the known map Wobo was given (and the
 // renderer draws), and the physical world the simulation runs in. They are
 // the same until the player drops a Road Block, which exists only in the
-// world.
+// world. The world also holds the map's movers (a donkey, a guard), which
+// Wobo's known map never shows.
 
 #include <memory>
 #include <optional>
@@ -23,6 +24,7 @@
 #include "gameplay/referee.h"
 #include "gameplay/run_stats.h"
 #include "robot/robot_agent.h"
+#include "simulation/movers.h"
 #include "simulation/world_simulation.h"
 #include "world/map2d.h"
 
@@ -96,6 +98,7 @@ public:
     const Map2D& map() const { return *map_; }      // what Wobo knows
     const Map2D& world() const { return *world_; }  // what is physically there
     const std::optional<RoadBlock>& road_block() const { return block_; }
+    const std::vector<Mover>& movers() const { return movers_.movers(); }
     // Whether an action's card can be offered on this map: Colour Blind needs
     // colourful walls, and Road Block somewhere it fits.
     bool suits_map(const std::string& action_key) const;
@@ -126,7 +129,7 @@ public:
 private:
     void push(GameEvent e) { events_.push_back(std::move(e)); }
     void begin_draft();
-    // InvalidTarget (off the floor), TooClose (on Wobo), CutsOff, or Ok.
+    // InvalidTarget (off the floor), TooClose (on Wobo or a mover), CutsOff, or Ok.
     ActivateResult check_block(const RoadBlock& block) const;
     void place_block(const RoadBlock& block);
     void clear_block();
@@ -142,6 +145,7 @@ private:
     std::uint8_t block_material_ = 0;
     std::vector<int> floor_label_;  // 4-connected floor components of the known map, -1 for solid
     std::optional<RoadBlock> block_;
+    MoverSystem movers_;
     bool colour_matters_ = true;
     bool block_fits_ = true;
     std::unique_ptr<WorldSimulation> sim_;

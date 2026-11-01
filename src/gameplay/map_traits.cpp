@@ -4,13 +4,16 @@
 
 namespace wobo {
 
-std::vector<int> label_floor(const Map2D& map, const std::vector<int>& blocked) {
+std::vector<int> label_floor(const Map2D& map, const std::vector<int>& blocked, float min_clearance) {
     const int w = map.width();
     const int h = map.height();
     std::vector<int> label(static_cast<std::size_t>(w * h), -1);
     std::vector<char> open(label.size(), 0);
     for (int cz = 0; cz < h; ++cz) {
-        for (int cx = 0; cx < w; ++cx) open[map.index(cx, cz)] = map.solid(cx, cz) ? 0 : 1;
+        for (int cx = 0; cx < w; ++cx) {
+            const int i = map.index(cx, cz);
+            open[i] = !map.solid(cx, cz) && map.cell_clearance(i) > 0.0f && map.cell_clearance(i) >= min_clearance;
+        }
     }
     for (int i : blocked) {
         if (i >= 0 && i < w * h) open[i] = 0;
@@ -40,8 +43,9 @@ std::vector<int> label_floor(const Map2D& map, const std::vector<int>& blocked) 
     return label;
 }
 
-bool stays_connected(const Map2D& map, const std::vector<int>& labels, const std::vector<int>& blocked) {
-    const std::vector<int> after = label_floor(map, blocked);
+bool stays_connected(const Map2D& map, const std::vector<int>& labels, const std::vector<int>& blocked,
+                     float min_clearance) {
+    const std::vector<int> after = label_floor(map, blocked, min_clearance);
     // Each old component must map onto exactly one new one.
     std::vector<int> seen;
     for (std::size_t i = 0; i < labels.size(); ++i) {
@@ -54,7 +58,7 @@ bool stays_connected(const Map2D& map, const std::vector<int>& labels, const std
     return true;
 }
 
-bool barrier_fits_somewhere(const Map2D& map, const std::vector<int>& labels, int length) {
+bool barrier_fits_somewhere(const Map2D& map, const std::vector<int>& labels, int length, float min_clearance) {
     const int half = length / 2;
     std::vector<int> cells;
     for (int cz = 0; cz < map.height(); ++cz) {
@@ -67,34 +71,49 @@ bool barrier_fits_somewhere(const Map2D& map, const std::vector<int>& labels, in
                     if (map.solid(x, z)) break;
                     cells.push_back(map.index(x, z));
                 }
-                if (static_cast<int>(cells.size()) == length && stays_connected(map, labels, cells)) return true;
+                if (static_cast<int>(cells.size()) == length && stays_connected(map, labels, cells, min_clearance)) {
+                    return true;
+                }
             }
         }
     }
     return false;
 }
 
+namespace {
+
+bool colourful(Rgb c) {
+    const int hi = std::max({c.r, c.g, c.b});
+    const int lo = std::min({c.r, c.g, c.b});
+    // Saturation: plaster and slate greys sit near 0.1-0.2, painted walls
+    // and crates above 0.4.
+    const float sat = hi > 0 ? static_cast<float>(hi - lo) / hi : 0.0f;
+    return sat >= 0.3f;
+}
+
+}  // namespace
+
 float colourful_wall_share(const Map2D& map) {
-    int faces = 0;
-    int colourful = 0;
+    float faces = 0.0f;
+    float colourful_faces = 0.0f;
     for (int cz = 0; cz < map.height(); ++cz) {
         for (int cx = 0; cx < map.width(); ++cx) {
             if (map.solid(cx, cz)) continue;
             const int nbrs[4][2] = {{cx + 1, cz}, {cx - 1, cz}, {cx, cz + 1}, {cx, cz - 1}};
             for (const auto& n : nbrs) {
                 if (!map.solid(n[0], n[1])) continue;
-                const Rgb c = map.material_at(n[0], n[1]).rgb;
-                const int hi = std::max({c.r, c.g, c.b});
-                const int lo = std::min({c.r, c.g, c.b});
-                // Saturation: plaster and slate greys sit near 0.1-0.2,
-                // painted walls and crates above 0.4.
-                const float sat = hi > 0 ? static_cast<float>(hi - lo) / hi : 0.0f;
-                ++faces;
-                if (sat >= 0.3f) ++colourful;
+                faces += 1.0f;
+                if (colourful(map.material_at(n[0], n[1]).rgb)) colourful_faces += 1.0f;
             }
         }
     }
-    return faces > 0 ? static_cast<float>(colourful) / faces : 0.0f;
+    for (const Shape& s : map.shapes()) {
+        const float perimeter = s.kind == Shape::Kind::Disc ? kTwoPi * s.radius : 4.0f * (s.half.x + s.half.z);
+        const float n = perimeter / map.cell_size();
+        faces += n;
+        if (colourful(map.material(s.material).rgb)) colourful_faces += n;
+    }
+    return faces > 0.0f ? colourful_faces / faces : 0.0f;
 }
 
 }  // namespace wobo

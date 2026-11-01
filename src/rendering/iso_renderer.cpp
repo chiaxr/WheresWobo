@@ -5,50 +5,22 @@
 #include <vector>
 
 #include "raymath.h"
+#include "rendering/mesh_builder.h"
 #include "rendering/primitives.h"
+#include "rendering/prop_models.h"
+#include "rlgl.h"
 
 namespace wobo {
 
 namespace {
 
-struct MeshBuilder {
-    std::vector<float> verts;
-    std::vector<float> normals;
-    std::vector<unsigned char> colors;
+bool is_water(const Map2D& map, int cx, int cz) {
+    return map.solid(cx, cz) && map.material_at(cx, cz).look == "water";
+}
 
-    void vertex(Vector3 p, Vector3 n, Color c) {
-        verts.insert(verts.end(), {p.x, p.y, p.z});
-        normals.insert(normals.end(), {n.x, n.y, n.z});
-        colors.insert(colors.end(), {c.r, c.g, c.b, c.a});
-    }
-    // p0..p3 counter-clockwise seen from the side the normal points to.
-    void quad(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, Vector3 n, Color c) {
-        vertex(p0, n, c); vertex(p1, n, c); vertex(p2, n, c);
-        vertex(p0, n, c); vertex(p2, n, c); vertex(p3, n, c);
-    }
-    // Axis-aligned rectangle on a horizontal plane.
-    void flat_rect(float x0, float z0, float x1, float z1, float y, Color c) {
-        quad({x0, y, z0}, {x0, y, z1}, {x1, y, z1}, {x1, y, z0}, {0, 1, 0}, c);
-    }
-
-    Mesh upload() {
-        Mesh m{};
-        m.vertexCount = static_cast<int>(verts.size() / 3);
-        m.triangleCount = m.vertexCount / 3;
-        if (m.vertexCount == 0) return m;
-        m.vertices = static_cast<float*>(MemAlloc(static_cast<unsigned int>(verts.size() * sizeof(float))));
-        m.normals = static_cast<float*>(MemAlloc(static_cast<unsigned int>(normals.size() * sizeof(float))));
-        m.colors = static_cast<unsigned char*>(MemAlloc(static_cast<unsigned int>(colors.size())));
-        std::memcpy(m.vertices, verts.data(), verts.size() * sizeof(float));
-        std::memcpy(m.normals, normals.data(), normals.size() * sizeof(float));
-        std::memcpy(m.colors, colors.data(), colors.size());
-        UploadMesh(&m, false);
-        return m;
-    }
-};
-
+// Water lies flat, at floor level.
 float height_at(const Map2D& map, int cx, int cz) {
-    return map.solid(cx, cz) ? map.material_at(cx, cz).height : 0.0f;
+    return map.solid(cx, cz) && !is_water(map, cx, cz) ? map.material_at(cx, cz).height : 0.0f;
 }
 
 // Is the floor point (x, z) shadowed by a block, for light along kLightDir?
@@ -63,7 +35,11 @@ bool in_shadow(const Map2D& map, float x, float z) {
         const int cx = map.cell_x(px);
         const int cz = map.cell_z(pz);
         if (!map.in_bounds(cx, cz)) return false;
-        if (map.solid(cx, cz) && map.material_at(cx, cz).height > t * rise) return true;
+        if (height_at(map, cx, cz) > t * rise) return true;
+        for (int s : map.shapes_in(map.index(cx, cz))) {
+            const Shape& sh = map.shapes()[static_cast<std::size_t>(s)];
+            if (sh.height > t * rise && sh.distance({px, pz}) < 0.0f) return true;
+        }
     }
     return false;
 }
@@ -146,10 +122,29 @@ void IsoRenderer::build(const Map2D& map, const ToonShader& shader) {
         }
     }
 
+    // Water: flat, with ripples and a stone lip where it meets the land.
+    for (int cz = 0; cz < map.height(); ++cz) {
+        for (int cx = 0; cx < map.width(); ++cx) {
+            if (!is_water(map, cx, cz)) continue;
+            const Color col = prim::to_color(map.material_at(cx, cz).rgb);
+            const float x0 = cx * cs, x1 = x0 + cs, z0 = cz * cs, z1 = z0 + cs;
+            lit.flat_rect(x0, z0, x1, z1, 0.0f, col);
+            const float k = 0.5f + 0.5f * std::sin(static_cast<float>(cx * 7 + cz * 13));
+            marks.flat_rect(x0 + cs * (0.15f + 0.3f * k), z0 + cs * 0.3f, x0 + cs * (0.45f + 0.3f * k), z0 + cs * 0.36f,
+                            0.003f, prim::shade(col, 1.25f));
+            const Color lip{176, 170, 160, 255};
+            const float t = 0.05f;
+            if (!map.solid(cx + 1, cz)) marks.flat_rect(x1 - t, z0, x1, z1, 0.004f, lip);
+            if (!map.solid(cx - 1, cz)) marks.flat_rect(x0, z0, x0 + t, z1, 0.004f, lip);
+            if (!map.solid(cx, cz + 1)) marks.flat_rect(x0, z1 - t, x1, z1, 0.004f, lip);
+            if (!map.solid(cx, cz - 1)) marks.flat_rect(x0, z0, x1, z0 + t, 0.004f, lip);
+        }
+    }
+
     // Blocks.
     for (int cz = 0; cz < map.height(); ++cz) {
         for (int cx = 0; cx < map.width(); ++cx) {
-            if (!map.solid(cx, cz)) continue;
+            if (!map.solid(cx, cz) || is_water(map, cx, cz)) continue;
             const Material& m = map.material_at(cx, cz);
             const float h = m.height;
             const float x0 = cx * cs, x1 = x0 + cs, z0 = cz * cs, z1 = z0 + cs;
@@ -184,7 +179,7 @@ void IsoRenderer::build(const Map2D& map, const ToonShader& shader) {
                 marks.quad({x1, 0, z1 + e}, {x1, band, z1 + e}, {x0, band, z1 + e}, {x0, 0, z1 + e}, {0, 0, 1}, outline);
             }
             // Corner between the +x and +z faces (facing the camera).
-            if (hxp < h && hzp < h && !map.solid(cx + 1, cz + 1)) {
+            if (hxp < h && hzp < h && height_at(map, cx + 1, cz + 1) <= 0.0f) {
                 const float lo = std::max(hxp, hzp);
                 marks.quad({x1 + e, lo, z1 - band}, {x1 + e, h, z1 - band}, {x1 + e, h, z1}, {x1 + e, lo, z1}, {1, 0, 0}, outline);
                 marks.quad({x1, lo, z1 + e}, {x1, h, z1 + e}, {x1 - band, h, z1 + e}, {x1 - band, lo, z1 + e}, {0, 0, 1}, outline);
@@ -201,8 +196,13 @@ void IsoRenderer::build(const Map2D& map, const ToonShader& shader) {
         }
     }
 
+    MeshBuilder hull;
+    build_props(map, lit, hull, marks);
+
     lit_ = lit.upload();
     marks_ = marks.upload();
+    hull_ = hull.upload();
+    decals_.build(map);
     material_ = LoadMaterialDefault();
     if (shader.valid()) material_.shader = shader.shader();
     built_ = true;
@@ -212,6 +212,8 @@ void IsoRenderer::unload() {
     if (!built_) return;
     UnloadMesh(lit_);
     UnloadMesh(marks_);
+    if (hull_.vertexCount > 0) UnloadMesh(hull_);
+    decals_.unload();
     // The material's shader belongs to ToonShader; detach it before raylib
     // would unload it along with the material.
     material_.shader = Shader{};
@@ -219,6 +221,7 @@ void IsoRenderer::unload() {
     material_ = ::Material{};
     lit_ = Mesh{};
     marks_ = Mesh{};
+    hull_ = Mesh{};
     built_ = false;
 }
 
@@ -229,6 +232,16 @@ void IsoRenderer::draw(const ToonShader& shader) const {
     if (lit_.vertexCount > 0) DrawMesh(lit_, material_, MatrixIdentity());
     shader.set_flat(true);
     if (marks_.vertexCount > 0) DrawMesh(marks_, material_, MatrixIdentity());
+    // Props' outlines: their inflated copies, inside out.
+    if (hull_.vertexCount > 0) {
+        rlDrawRenderBatchActive();
+        rlSetCullFace(RL_CULL_FACE_FRONT);
+        DrawMesh(hull_, material_, MatrixIdentity());
+        rlDrawRenderBatchActive();
+        rlSetCullFace(RL_CULL_FACE_BACK);
+    }
+    decals_.draw();
+    rlDrawRenderBatchActive();
     shader.set_flat(false);
 }
 

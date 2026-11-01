@@ -87,7 +87,8 @@ wobo_embed_files(
     SYMBOL    wobo_font_files
     BASE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts"
     FILES     "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/dejavu_sans_subset.ttf"
-              "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/dejavu_sans_bold_subset.ttf")
+              "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/dejavu_sans_bold_subset.ttf"
+              "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/chalk_subset.ttf")
 
 # Warnings on the game's own sources only -- raylib is fetched and not ours to
 # keep clean.
@@ -110,9 +111,11 @@ add_library(wobo_core STATIC
     src/core/rng.cpp
     src/world/map2d.cpp
     src/world/map_loader.cpp
+    src/world/props.cpp
     src/world/raycast.cpp
     src/simulation/dynamics.cpp
     src/simulation/lidar.cpp
+    src/simulation/movers.cpp
     src/simulation/odometry.cpp
     src/simulation/world_simulation.cpp
     src/localization/particle_filter.cpp
@@ -147,8 +150,12 @@ add_library(wobo_game STATIC
     src/rendering/debug_renderer.cpp
     src/rendering/effects_renderer.cpp
     src/rendering/iso_renderer.cpp
+    src/rendering/mesh_builder.cpp
+    src/rendering/mover_models.cpp
+    src/rendering/prop_models.cpp
     src/rendering/primitives.cpp
     src/rendering/robot_model.cpp
+    src/rendering/text_decals.cpp
     src/rendering/toon_shader.cpp
     src/ui/action_icons.cpp
     src/ui/card_screen.cpp

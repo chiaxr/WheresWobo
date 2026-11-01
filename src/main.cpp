@@ -3,6 +3,7 @@
 //   WheresWobo                      play
 //   WheresWobo --profile [SECONDS]  time every map uncapped, print frame stats, quit
 //   WheresWobo --poster PATH.png    render the README / social-preview poster, quit
+//   WheresWobo --shots DIR          render every map (whole, and a close-up) to DIR, quit
 //   options: --size WxH             window (or poster) size (default 1280x720)
 
 #include <cstdio>
@@ -22,11 +23,13 @@ int main(int argc, char** argv) {
             opt.profile_s = has_value ? static_cast<float>(std::atof(argv[++i])) : 8.0f;
         } else if (std::strcmp(a, "--poster") == 0 && has_value) {
             opt.poster_path = argv[++i];
+        } else if (std::strcmp(a, "--shots") == 0 && has_value) {
+            opt.shots_dir = argv[++i];
         } else if (std::strcmp(a, "--size") == 0 && has_value) {
             std::sscanf(argv[++i], "%dx%d", &opt.width, &opt.height);
         } else {
             std::fprintf(stderr,
-                         "usage: WheresWobo [--profile [SECONDS]] [--poster PATH]"
+                         "usage: WheresWobo [--profile [SECONDS]] [--poster PATH] [--shots DIR]"
                          " [--size WxH]\n");
             return 2;
         }

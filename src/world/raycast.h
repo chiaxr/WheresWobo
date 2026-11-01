@@ -1,8 +1,9 @@
 #pragma once
 
-// 2D ray casting against the grid map (Amanatides-Woo DDA). This is the one
-// place beams meet geometry: the LiDAR simulator, the localizer's expected
-// scans and the planner's predicted scans all call it, never the 3D meshes.
+// 2D ray casting against the grid map (Amanatides-Woo DDA), its shapes and
+// any movers. This is the one place beams meet geometry: the LiDAR
+// simulator, the localizer's expected scans and the planner's predicted
+// scans all call it, never the 3D meshes.
 
 #include <cstdint>
 

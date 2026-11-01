@@ -53,11 +53,11 @@ TEST("localizer: registry builds every alternative") {
     CHECK(planner_names().size() >= 3);
 }
 
-TEST("localizer: histogram filter localizes globally on the distinctive map") {
+TEST("localizer: histogram filter localizes globally in the Barn") {
     Config cfg = load_game_config();
     cfg.set("localizer.type", "histogram_filter");
     int ok = 0;
-    for (std::uint64_t seed = 1; seed <= 3; ++seed) ok += time_to_localize("workshop", seed, 120.0, cfg) > 0.0 ? 1 : 0;
+    for (std::uint64_t seed = 1; seed <= 3; ++seed) ok += time_to_localize("barn", seed, 120.0, cfg) > 0.0 ? 1 : 0;
     CHECK(ok >= 2);
 }
 
@@ -79,7 +79,7 @@ TEST("planner: the baselines move Wobo") {
     Config cfg = load_game_config();
     for (const char* name : {"landmark_tour", "random_walk"}) {
         cfg.set("planner.type", name);
-        const double t = time_to_localize("greyscale", 2, 200.0, cfg);
+        const double t = time_to_localize("gallery", 2, 200.0, cfg);
         std::printf("    %s: %.1f s\n", name, t);
         CHECK(t > 0.0);
     }
@@ -89,15 +89,15 @@ TEST("localizer: tight gaussian prior converges near the truth") {
     Config cfg = load_game_config();
     cfg.set("run.prior", "gaussian");
     cfg.set("run.prior_sigma", "0.3");
-    const double t = time_to_localize("workshop", 11, 60.0, cfg);
+    const double t = time_to_localize("barn", 11, 60.0, cfg);
     CHECK(t > 0.0);
     CHECK(t < 30.0);
 }
 
-TEST("localizer: global localization succeeds on the distinctive map") {
+TEST("localizer: global localization succeeds in the Barn") {
     int ok = 0;
     for (std::uint64_t seed = 1; seed <= 4; ++seed) {
-        const double t = time_to_localize("workshop", seed, 240.0);
+        const double t = time_to_localize("barn", seed, 240.0);
         std::printf("    seed %llu: %.1f s\n", static_cast<unsigned long long>(seed), t);
         ok += t > 0.0 ? 1 : 0;
     }
@@ -106,7 +106,7 @@ TEST("localizer: global localization succeeds on the distinctive map") {
 
 TEST("localizer: uniform prior is not localized at the start") {
     RunDirector run(load_game_config());
-    REQUIRE(run.start("workshop", 3));
+    REQUIRE(run.start("barn", 3));
     const PoseEstimate e = run.agent().estimate();
     CHECK(e.confidence < 0.2f);
     const auto* diag = run.agent().diagnostics();
@@ -116,7 +116,7 @@ TEST("localizer: uniform prior is not localized at the start") {
 
 TEST("planner: works from a point estimate without diagnostics") {
     const Config cfg = load_game_config();
-    auto map = load_map("workshop");
+    auto map = load_map("barn");
     REQUIRE(map.has_value());
     auto planner = make_planner("info_gain", cfg);
     REQUIRE(planner != nullptr);
@@ -139,10 +139,11 @@ TEST("planner: works from a point estimate without diagnostics") {
     CHECK(!plan2.reason.empty());
 }
 
-TEST("navigator: finds the mirror twin on the Hall of Mirrors") {
-    // The map is symmetric under a half turn about its centre, except for a
-    // blue corner far from here, so the rotated pose must be a look-alike.
-    auto map = load_map("mirror");
+TEST("navigator: finds the half-turn twin in the Barn") {
+    // The barn's walls, stalls and hay are symmetric under a half turn about
+    // its centre; only the tools left about are not, so the rotated pose
+    // must be a look-alike.
+    auto map = load_map("barn");
     REQUIRE(map.has_value());
     GoalNavigator nav;
     const Pose2D est{10.25f, 4.75f, 0.3f};
@@ -163,7 +164,7 @@ TEST("planner: a collapsed belief keeps moving") {
     // the planner must still travel (the stall that let a confidently wrong
     // Wobo stand still forever).
     const Config cfg = load_game_config();
-    auto map = load_map("offices");
+    auto map = load_map("office");
     REQUIRE(map.has_value());
     auto planner = make_planner("info_gain", cfg);
     planner->reset(1);
@@ -184,10 +185,10 @@ TEST("planner: a collapsed belief keeps moving") {
     CHECK(moving >= 3);
 }
 
-TEST("localizer: recovers from wrong convergence on the symmetric Office Block") {
+TEST("localizer: recovers from wrong convergence in the symmetric Office") {
     int ok = 0;
     for (std::uint64_t seed = 1; seed <= 4; ++seed) {
-        const double t = time_to_localize("offices", seed, 300.0);
+        const double t = time_to_localize("office", seed, 300.0);
         std::printf("    seed %llu: %.1f s\n", static_cast<unsigned long long>(seed), t);
         ok += t > 0.0 ? 1 : 0;
     }
