@@ -30,6 +30,11 @@ public:
     // particles. Wobo's computer warms up as a run goes on, from a fraction
     // to more than 1; methods with nothing to scale may ignore it.
     virtual void set_budget(float share) { (void)share; }
+    // Late in the day Wobo learns to re-seed a lost belief from where its
+    // scan fits the map's precomputed views; `temperature` is how sharply it
+    // favours the best fits (0: not yet). Methods without such a step may
+    // ignore it.
+    virtual void set_view_injection(float temperature) { (void)temperature; }
 
     virtual PoseEstimate estimate() const = 0;
     // nullptr when the method has no diagnostics to offer.

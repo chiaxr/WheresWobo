@@ -28,6 +28,9 @@ ParticleFilterConfig ParticleFilterConfig::from(const Config& cfg) {
     c.alpha_fast = cfg.get_float("localizer.alpha_fast", c.alpha_fast);
     c.max_injection = cfg.get_float("localizer.max_injection", c.max_injection);
     c.inject_candidates = std::max(1, cfg.get_int("localizer.inject_candidates", c.inject_candidates));
+    c.view_injection = cfg.get_bool("localizer.view_injection", c.view_injection);
+    c.view_range = cfg.get_float("sensor.max_range", c.view_range);
+    c.view_temperature = cfg.get_float("localizer.view_temperature", c.temperature);
     c.resample_ess = cfg.get_float("localizer.resample_ess", c.resample_ess);
     c.cluster_radius_m = cfg.get_float("localizer.cluster_radius", c.cluster_radius_m);
     c.cluster_heading_rad =
@@ -62,7 +65,110 @@ void ParticleFilter::reset(const Map2D& known_map, const InitialBelief& prior, s
     have_averages_ = false;
     w_slow_ = w_fast_ = 0.0f;
     beam_offset_ = 0;
+    views_scored_ = false;
+    if (view_temperature_ > 0.0f && views_for_ != map_) build_views();
     update_estimate();
+}
+
+void ParticleFilter::set_view_injection(float temperature) {
+    view_temperature_ = std::max(0.0f, temperature);
+    if (view_temperature_ > 0.0f && map_ && views_for_ != map_) build_views();
+}
+
+void ParticleFilter::build_views() {
+    views_for_ = map_;
+    view_materials_ = static_cast<int>(map_->materials().size());
+    view_cells_.clear();
+    view_keys_.clear();
+    const int w = map_->width();
+    const float bin_m = config_.view_range / kRangeBins;
+    const auto nothing = static_cast<std::uint16_t>(kRangeBins * view_materials_);
+    for (int i : map_->free_cells()) {
+        if (map_->cell_clearance(i) < config_.robot_radius) continue;
+        view_cells_.push_back(i);
+        const Vec2 c = map_->cell_center(i % w, i / w);
+        for (int k = 0; k < kViews; ++k) {
+            const RayHit e = cast_ray(*map_, c.x, c.z, kTwoPi * k / kViews, config_.view_range);
+            const int bin = std::min(kRangeBins - 1, static_cast<int>(e.range / bin_m));
+            view_keys_.push_back(e.hit ? static_cast<std::uint16_t>(bin * view_materials_ + e.material) : nothing);
+        }
+    }
+}
+
+// The fit of every (cell, heading) state to the whole scan, with the beam
+// model of log_likelihood, as a cumulative distribution of its tempered
+// likelihood. The scan's beams are tabulated against every possible view
+// entry first, so each state costs a lookup per beam.
+void ParticleFilter::score_views(const RgbLidarScan& scan) {
+    if (views_for_ != map_) build_views();
+    const int n_keys = kRangeBins * view_materials_ + 1;
+    const float bin_m = config_.view_range / kRangeBins;
+    const float eps = config_.p_random;
+    const float inv_sr2 = 1.0f / (config_.sigma_range * config_.sigma_range);
+    const float inv_sc2 = 1.0f / (config_.sigma_colour * config_.sigma_colour);
+    const float max_range = scan.max_range_m;
+
+    std::vector<int> dirs;
+    std::vector<float> table;
+    for (const LidarReturn& r : scan.returns) {
+        int d = static_cast<int>(std::lround(r.angle_rad / kTwoPi * kViews)) % kViews;
+        dirs.push_back(d < 0 ? d + kViews : d);
+        for (int key = 0; key < n_keys; ++key) {
+            const bool view_hit = key < n_keys - 1;
+            const float view_range = view_hit ? (static_cast<float>(key / view_materials_) + 0.5f) * bin_m : max_range;
+            const bool expect_hit = view_hit && view_range < max_range;  // the scan may be cut short
+            float p;
+            if (r.hit) {
+                const float dr = r.range_m - (expect_hit ? view_range : max_range);
+                const float pr = std::exp(-0.5f * dr * dr * inv_sr2);
+                float pc = 1.0f;
+                if (expect_hit) {
+                    const auto mat = static_cast<std::uint8_t>(key % view_materials_);
+                    const float dc = colour_distance(r.rgb, map_->material(mat).rgb);
+                    pc = config_.colour_floor + (1.0f - config_.colour_floor) * std::exp(-0.5f * dc * dc * inv_sc2);
+                }
+                p = (1.0f - eps) * pr * pc + eps;
+            } else {
+                p = expect_hit ? config_.p_unexpected_miss : 1.0f;
+            }
+            table.push_back(std::log(p));
+        }
+    }
+
+    const std::size_t n_beams = dirs.size();
+    const std::size_t n_states = view_cells_.size() * kViews;
+    view_cdf_.resize(n_states);
+    float best = -1e30f;
+    for (std::size_t s = 0; s < view_cells_.size(); ++s) {
+        const std::uint16_t* keys = &view_keys_[s * kViews];
+        for (int h = 0; h < kViews; ++h) {
+            float ll = 0.0f;
+            for (std::size_t j = 0; j < n_beams; ++j) {
+                ll += table[j * n_keys + keys[(h + dirs[j]) % kViews]];
+            }
+            view_cdf_[s * kViews + h] = ll;
+            best = std::max(best, ll);
+        }
+    }
+    float sum = 0.0f;
+    for (float& v : view_cdf_) {
+        sum += std::exp(view_temperature_ * (v - best));
+        v = sum;
+    }
+    for (float& v : view_cdf_) v /= sum;
+    views_scored_ = n_states > 0;
+}
+
+// The pose of the state at `u` (0..1) of the view distribution: its cell
+// centre and view direction.
+Pose2D ParticleFilter::draw_from_views(float u) {
+    const auto it = std::lower_bound(view_cdf_.begin(), view_cdf_.end(), u);
+    const auto state = static_cast<std::size_t>(std::min<std::ptrdiff_t>(
+        it - view_cdf_.begin(), static_cast<std::ptrdiff_t>(view_cdf_.size()) - 1));
+    const int cell = view_cells_[state / kViews];
+    const int h = static_cast<int>(state % kViews);
+    const Vec2 c = map_->cell_center(cell % map_->width(), cell / map_->width());
+    return {c.x, c.z, wrap_angle(kTwoPi * h / kViews)};
 }
 
 void ParticleFilter::set_budget(float share) { budget_ = clampf(share, 0.0f, 4.0f); }
@@ -168,6 +274,8 @@ void ParticleFilter::observe(const RgbLidarScan& scan) {
     const float ratio = w_slow_ > 1e-9f ? w_fast_ / w_slow_ : 1.0f;
     const float inject = clampf(1.0f - ratio, 0.0f, config_.max_injection);
     estimate_.consistency = clampf(ratio, 0.0f, 1.0f);
+    views_scored_ = false;
+    if (view_temperature_ > 0.0f && inject > 0.005f) score_views(scan);
 
     // Reweight (tempered), normalise, and measure degeneracy.
     float sum = 0.0f;
@@ -220,7 +328,31 @@ void ParticleFilter::resample(float inject_fraction) {
     }
     // Injected particles: the best fit to the latest scan among a few random
     // poses (sensor-resetting), so recovery lands near places that look right.
-    for (std::size_t i = n_keep; i < n; ++i) {
+    // From the view table, the poses tried lie around one state drawn from it
+    // (systematically, so look-alike places share the draws).
+    if (views_scored_ && n_inject > 0) {
+        const float cell = map_->cell_size();
+        const float turn = kTwoPi / kViews;
+        const float draw_step = 1.0f / static_cast<float>(n_inject);
+        const float u0 = rng_.uniform() * draw_step;
+        for (std::size_t i = n_keep; i < n; ++i) {
+            const Pose2D centre = draw_from_views(u0 + draw_step * static_cast<float>(i - n_keep));
+            Pose2D best = centre;
+            float best_ll = -1e30f;
+            for (int k = 0; k < inject_candidates(); ++k) {
+                const Pose2D p{centre.x + (rng_.uniform() - 0.5f) * cell, centre.z + (rng_.uniform() - 0.5f) * cell,
+                               wrap_angle(centre.heading_rad + (rng_.uniform() - 0.5f) * turn)};
+                if (!map_->valid_pose(p, config_.robot_radius)) continue;
+                const float ll = log_likelihood(p);
+                if (ll > best_ll) {
+                    best_ll = ll;
+                    best = p;
+                }
+            }
+            scratch_[i] = {best, 0.0f};
+        }
+    }
+    for (std::size_t i = views_scored_ ? n : n_keep; i < n; ++i) {
         Pose2D best = map_->sample_valid_pose(rng_, config_.robot_radius);
         const int candidates = inject_candidates();
         float best_ll = candidates > 1 ? log_likelihood(best) : 0.0f;

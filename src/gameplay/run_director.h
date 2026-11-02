@@ -34,7 +34,7 @@ namespace wobo {
 enum class RunPhase { Playing, Drafting, Over };
 
 struct GameEvent {
-    enum class Type { ActionUsed, Teleported, HourEnded, CardChosen, CloseCall, Localized, Spin, BlockCleared, Repainted, DayEnded, MagnetCleared };
+    enum class Type { ActionUsed, Teleported, HourEnded, CardChosen, CloseCall, Localized, Spin, BlockCleared, Repainted, DayEnded, MagnetCleared, Learned };
     Type type;
     ActionId action = ActionId::Range;
     Pose2D from;
@@ -147,6 +147,11 @@ public:
     // drop to Overload's caps ([action.overload]) while it lasts.
     float compute_share() const;
     float compute_update_hz() const;
+    // How sharply Wobo re-seeds a lost belief from the map's views this hour
+    // ([learning] in game.cfg): 0 before `view_hour`, then growing towards
+    // `view_final`. Negative when [learning] is off and the localizer's own
+    // setting stands.
+    float view_temperature() const;
 
 private:
     void push(GameEvent e) { events_.push_back(std::move(e)); }

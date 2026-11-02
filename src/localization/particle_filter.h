@@ -6,7 +6,13 @@
 // from being kidnapped. Injected particles are the best fit to the current
 // scan among a few random poses (sensor-resetting localization), so a filter
 // that converged on the wrong place re-seeds where the scan says it could be.
+// With view injection on, the poses tried are drawn from a table instead: the
+// 360-degree view from every cell centre, ray-cast once per map, is scored
+// against the scan under every turn, and injected particles are drawn in
+// proportion to that fit (the "dual" proposal of Mixture MCL), so every place
+// that looks like the scan gets particles at once.
 
+#include <cstdint>
 #include <vector>
 
 #include "core/config.h"
@@ -42,6 +48,9 @@ struct ParticleFilterConfig {
     float alpha_fast = 0.3f;
     float max_injection = 0.08f;
     int inject_candidates = 8;    // random poses tried per injected particle (1 = plain uniform)
+    bool view_injection = false;  // draw them from the view table instead (poses near the draw)
+    float view_range = 2.5f;      // the scanner's rated range, for the view table
+    float view_temperature = 0.08f;  // how sharply draws favour the best-fitting views
     float resample_ess = 0.5f;
 
     // Clustering for the estimate and hypotheses.
@@ -53,7 +62,8 @@ struct ParticleFilterConfig {
 
 class ParticleFilter final : public ILocalizer {
 public:
-    explicit ParticleFilter(const ParticleFilterConfig& config) : config_(config) {}
+    explicit ParticleFilter(const ParticleFilterConfig& config)
+        : config_(config), view_temperature_(config.view_injection ? config.view_temperature : 0.0f) {}
 
     std::string_view name() const override { return "particle_filter"; }
     void reset(const Map2D& known_map, const InitialBelief& prior, std::uint64_t seed) override;
@@ -62,6 +72,7 @@ public:
     // Scales the particle count (the set grows or shrinks at the next
     // update) and the random poses tried per injected particle.
     void set_budget(float share) override;
+    void set_view_injection(float temperature) override;
     PoseEstimate estimate() const override { return estimate_; }
     const LocalizationDiagnostics* diagnostics() const override { return &diag_; }
 
@@ -82,6 +93,9 @@ private:
     float log_likelihood(const Pose2D& pose) const;  // against beams_
     void update_estimate();
     Pose2D sample_prior();
+    void build_views();
+    void score_views(const RgbLidarScan& scan);
+    Pose2D draw_from_views(float u);
 
     ParticleFilterConfig config_;
     const Map2D* map_ = nullptr;
@@ -102,6 +116,19 @@ private:
     float w_fast_ = 0.0f;
     bool have_averages_ = false;
     int beam_offset_ = 0;
+
+    // View injection: per cell with room for Wobo, the view under each of
+    // kViews directions as keys into the latest scan's per-beam likelihood
+    // tables (range bin and material, or nothing in range).
+    static constexpr int kViews = 32;
+    static constexpr int kRangeBins = 50;
+    float view_temperature_ = 0.0f;  // 0: view injection off
+    const Map2D* views_for_ = nullptr;
+    std::vector<int> view_cells_;
+    std::vector<std::uint16_t> view_keys_;  // [cell slot][direction]
+    int view_materials_ = 0;
+    std::vector<float> view_cdf_;           // [cell slot * kViews + heading], latest scan's fit
+    bool views_scored_ = false;
 };
 
 }  // namespace wobo

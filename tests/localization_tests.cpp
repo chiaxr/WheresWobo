@@ -4,6 +4,7 @@
 #include "localization/localizer_registry.h"
 #include "planning/goal_navigator.h"
 #include "planning/planner_registry.h"
+#include "simulation/lidar.h"
 #include "test.h"
 #include "world/map_loader.h"
 
@@ -104,6 +105,43 @@ TEST("localizer: global localization succeeds in the Barn") {
     CHECK(ok >= 3);
 }
 
+TEST("localizer: view injection re-seeds a kidnapped filter at the truth") {
+    // Locked on where it stands, Wobo is carried off and keeps scanning: the
+    // particles injected from the view table must find where it now is, and
+    // more of them than random poses do.
+    auto map = load_map("konigsberg");
+    REQUIRE(map.has_value());
+    const auto near_truth = [&](const char* views) {
+        Config cfg = load_game_config();
+        cfg.set("localizer.view_injection", views);
+        auto pf = make_localizer("particle_filter", cfg);
+        Rng rng(7);
+        const Pose2D truth = map->sample_valid_pose(rng, 0.2f);
+        Pose2D before = truth;
+        while (distance(before.position(), truth.position()) < 5.0f) before = map->sample_valid_pose(rng, 0.2f);
+        InitialBelief prior;
+        prior.kind = InitialBelief::Kind::Gaussian;
+        prior.mean = before;
+        prior.sigma_position_m = 0.2f;
+        prior.sigma_heading_rad = 0.1f;
+        pf->reset(*map, prior, 3);
+        const RgbLidarSimulator lidar(LidarConfig::from(cfg));
+        for (int i = 0; i < 8; ++i) pf->observe(lidar.scan(*map, before, 0.25 * i, rng, SensorModifiers{}));
+        for (int i = 8; i < 20; ++i) pf->observe(lidar.scan(*map, truth, 0.25 * i, rng, SensorModifiers{}));
+        int near = 0;
+        for (const WeightedPose& p : pf->diagnostics()->particles) {
+            near += distance(p.pose.position(), truth.position()) < 0.5f &&
+                    std::fabs(angle_diff(p.pose.heading_rad, truth.heading_rad)) < 0.35f;
+        }
+        return near;
+    };
+    const int views = near_truth("1");
+    const int random = near_truth("0");
+    std::printf("    particles at the truth: %d from views, %d from random poses\n", views, random);
+    CHECK(views > 125);
+    CHECK(views > random);
+}
+
 TEST("localizer: uniform prior is not localized at the start") {
     RunDirector run(load_game_config());
     REQUIRE(run.start("barn", 3));
@@ -140,6 +178,38 @@ TEST("compute: Wobo's particle budget and update rate grow hour by hour") {
     CHECK(std::fabs(run.compute_share() - 0.625f) < 1e-4f);
     CHECK(std::fabs(run.compute_update_hz() - 2.5f) < 1e-4f);
     CHECK(run.agent().diagnostics()->particles.size() == 1250);
+}
+
+TEST("learning: Wobo learns to recognise places late in the day, ever more sharply") {
+    Config cfg = load_game_config();
+    cfg.set("learning.view_hour", "2");
+    cfg.set("learning.view_temperature", "0.1");
+    cfg.set("learning.view_final", "0.5");
+    cfg.set("learning.view_hourly_factor", "0.5");
+    cfg.set("run.hour_length", "10");
+    cfg.set("referee.stability", "100000");  // keep the run going
+    RunDirector run(cfg);
+    REQUIRE(run.start("barn", 2));
+    CHECK(run.view_temperature() == 0.0f);
+    bool learned = false;
+    while (run.score().hour < 3) {
+        if (run.phase() == RunPhase::Drafting) run.skip_draft();
+        run.step();
+        for (const GameEvent& e : run.drain_events()) {
+            if (e.type == GameEvent::Type::Learned) {
+                CHECK(run.score().hour == 2);
+                learned = true;
+            }
+        }
+        if (run.score().hour == 2) CHECK(std::fabs(run.view_temperature() - 0.1f) < 1e-4f);
+    }
+    CHECK(learned);
+    CHECK(std::fabs(run.view_temperature() - 0.3f) < 1e-4f);
+
+    cfg.set("learning.view_hour", "0");  // off: the localizer's own setting stands
+    RunDirector off(cfg);
+    REQUIRE(off.start("barn", 2));
+    CHECK(off.view_temperature() < 0.0f);
 }
 
 TEST("planner: works from a point estimate without diagnostics") {

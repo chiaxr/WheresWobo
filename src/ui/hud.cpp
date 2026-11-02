@@ -256,9 +256,14 @@ void draw_hud(const HudLayout& l, const RunDirector& run, const HudState& st) {
         DrawCircleV({r.x + 5.0f * s, top + 10.0f * s}, 5.0f * s, mood_colour(mood));
         std::string title = std::string("Wobo is ") + mood_name(mood);
         text(title.c_str(), r.x + 17.0f * s, top, 18.0f * s, kInk, Weight::Bold);
-        // What it is up to, then, quietly, how much compute it has this hour.
-        char cores[48];
-        std::snprintf(cores, sizeof(cores), "  -  compute cores running at %.0f%%", 100.0f * run.compute_share());
+        // What it is up to, then, quietly, how much compute it has this hour
+        // and whether it has learned to recognise places yet.
+        char cores[80];
+        const int len = std::snprintf(cores, sizeof(cores), "  -  compute cores running at %.0f%%",
+                                      100.0f * run.compute_share());
+        if (run.view_temperature() > 0.0f) {
+            std::snprintf(cores + len, sizeof(cores) - static_cast<std::size_t>(len), ", recognising places");
+        }
         const float fs = 13.0f * s;
         const float cores_w = measure(cores, fs);
         const std::string reason = "\"" + agent.plan().reason + "\"";

@@ -201,8 +201,12 @@ void RunDirector::step() {
         }
         hour_time_s_ = 0.0;
         push({GameEvent::Type::HourEnded, ActionId::Range, {}, {}, "Hour " + std::to_string(hour_) + " survived"});
+        const bool knew = view_temperature() > 0.0f;
         ++hour_;
         apply_compute_budget();
+        if (!knew && view_temperature() > 0.0f) {
+            push({GameEvent::Type::Learned, ActionId::Range, {}, {}, "Wobo has learned to recognise places"});
+        }
         begin_draft();
     }
 }
@@ -251,8 +255,21 @@ float RunDirector::compute_update_hz() const {
     return hz >= full - 0.05f ? 0.0f : hz;
 }
 
+float RunDirector::view_temperature() const {
+    const int from = config_.get_int("learning.view_hour", 0);
+    if (from <= 0) return -1.0f;
+    if (hour_ < from) return 0.0f;
+    const float gap = std::pow(clampf(config_.get_float("learning.view_hourly_factor", 1.0f), 0.0f, 1.0f),
+                               static_cast<float>(hour_ - from));
+    const float first = std::max(0.0f, config_.get_float("learning.view_temperature", 0.08f));
+    const float last = std::max(first, config_.get_float("learning.view_final", first));
+    return last - (last - first) * gap;
+}
+
 void RunDirector::apply_compute_budget() {
-    if (agent_) agent_->set_budget(compute_share(), compute_update_hz());
+    if (!agent_) return;
+    agent_->set_budget(compute_share(), compute_update_hz());
+    if (const float t = view_temperature(); t >= 0.0f) agent_->set_view_injection(t);
 }
 
 ActivateResult RunDirector::can_activate(ActionId id) const {

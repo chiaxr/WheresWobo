@@ -54,6 +54,8 @@ public:
     // How much compute Wobo has: the localizer's share of its full budget,
     // and how often per second it runs (0: on every scan).
     void set_budget(float share, float update_hz);
+    // How sharply its localizer re-seeds from the map's views (0: off).
+    void set_view_injection(float temperature) { localizer_->set_view_injection(temperature); }
 
     PoseEstimate estimate() const { return localizer_->estimate(); }
     const LocalizationDiagnostics* diagnostics() const { return localizer_->diagnostics(); }

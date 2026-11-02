@@ -320,6 +320,9 @@ void GameApp::handle_events(RunDirector& run, bool is_player_run) {
             case GameEvent::Type::HourEnded:
                 if (is_player_run) toast(e.text + " - pick a card!", ui::kGood);
                 break;
+            case GameEvent::Type::Learned:
+                if (is_player_run) toast(e.text + ": a lost scan now tells it where to look", ui::kDanger);
+                break;
             case GameEvent::Type::CardChosen:
                 toast("Drafted: " + e.text, ui::kEnergy);
                 break;
